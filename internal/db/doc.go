@@ -339,19 +339,55 @@ func (d *docStore) runSQL(ctx context.Context, q string, limit int) (*Result, er
 	q = strings.TrimSuffix(strings.TrimSpace(q), ";")
 	res := &Result{Columns: []string{}, Rows: [][]any{}}
 	if d.flavor == "elasticsearch" {
+		// Elasticsearch SQL wants double-quoted identifiers and has no OFFSET: rewrite the
+		// backticks the UI generates and emulate OFFSET by skipping rows, paging with the cursor.
+		q, skip := esSQL(q)
+		want := 0
+		if limit > 0 {
+			want = skip + limit + 1
+		}
+		body := map[string]any{"query": q}
+		if want > 0 && want < 1000 {
+			body["fetch_size"] = want
+		}
 		var r struct {
 			Columns []struct {
 				Name string `json:"name"`
 			} `json:"columns"`
-			Rows [][]any `json:"rows"`
+			Rows   [][]any `json:"rows"`
+			Cursor string  `json:"cursor"`
 		}
-		if _, err := d.call(ctx, "POST", d.sqlPath(), map[string]any{"query": q}, &r); err != nil {
+		if _, err := d.call(ctx, "POST", d.sqlPath(), body, &r); err != nil {
 			return nil, err
 		}
 		for _, c := range r.Columns {
 			res.Columns = append(res.Columns, c.Name)
 		}
-		res.Rows = r.Rows
+		rows := r.Rows
+		cursor := r.Cursor
+		for cursor != "" && (want == 0 || len(rows) < want) {
+			var more struct {
+				Rows   [][]any `json:"rows"`
+				Cursor string  `json:"cursor"`
+			}
+			if _, err := d.call(ctx, "POST", d.sqlPath(), map[string]any{"cursor": cursor}, &more); err != nil {
+				return nil, err
+			}
+			rows = append(rows, more.Rows...)
+			if len(more.Rows) == 0 {
+				break
+			}
+			cursor = more.Cursor
+		}
+		if cursor != "" {
+			_, _ = d.call(ctx, "POST", "/_sql/close", map[string]any{"cursor": cursor}, nil)
+		}
+		if skip >= len(rows) {
+			rows = nil
+		} else {
+			rows = rows[skip:]
+		}
+		res.Rows = rows
 	} else {
 		var r struct {
 			Schema []struct {
@@ -895,4 +931,34 @@ func (c *Conn) exportCSVDoc(ctx context.Context, q string, w io.Writer) (int64, 
 		err = cw.Error()
 	}
 	return n, err
+}
+
+var esLimitOffset = regexp.MustCompile(`(?is)\s+LIMIT\s+(\d+)\s+OFFSET\s+(\d+)\s*$`)
+
+// esSQL adapts a statement written for the UI's MySQL-style dialect to Elasticsearch SQL:
+// backtick identifiers become double-quoted, and a trailing LIMIT n OFFSET m becomes
+// LIMIT n+m with m returned as the number of leading rows to drop.
+func esSQL(q string) (string, int) {
+	skip := 0
+	if m := esLimitOffset.FindStringSubmatchIndex(q); m != nil {
+		n, _ := strconv.Atoi(q[m[2]:m[3]])
+		off, _ := strconv.Atoi(q[m[4]:m[5]])
+		skip = off
+		q = q[:m[0]] + " LIMIT " + strconv.Itoa(n+off)
+	}
+	var b strings.Builder
+	inStr := false
+	for i := 0; i < len(q); i++ {
+		ch := q[i]
+		switch {
+		case ch == '\'':
+			inStr = !inStr
+			b.WriteByte(ch)
+		case ch == '`' && !inStr:
+			b.WriteByte('"')
+		default:
+			b.WriteByte(ch)
+		}
+	}
+	return b.String(), skip
 }
