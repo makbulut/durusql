@@ -16,5 +16,6 @@ PRE=""; [[ "$VERSION" == *-* ]] && PRE="--prerelease"
 NOTES=$(awk -v v="$VERSION" '/^## /{ if (found) exit; if (index($0, v)) { found=1; next } } found' CHANGELOG.md 2>/dev/null || true)
 [ -n "$NOTES" ] || NOTES="DuruSQL $VERSION"
 git tag -f "v$VERSION" >/dev/null 2>&1 || true
+git push -q origin "v$VERSION" 2>/dev/null || true
 gh release create "v$VERSION" $PRE --title "DuruSQL $VERSION" --notes "$NOTES" dist/*.deb dist/*.tar.gz dist/*.zip dist/SHA256SUMS $(ls dist/*.exe dist/*.dmg 2>/dev/null || true)
 echo "released v$VERSION ($( [ -n "$PRE" ] && echo beta || echo stable ) channel)"
