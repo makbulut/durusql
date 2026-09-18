@@ -66,7 +66,7 @@
           {#if c.favorite}<span class="fav">{@html icons.starOn}</span>{/if}
           {#if s.connected}<span class="count">{s.dbNames?.length ?? 0}</span>{/if}
           {#if s.error}<span class="bad" title={s.error}>{@html icons.err}</span>{/if}
-          <span class="sub">{c.driver === 'postgres' ? 'pg' : 'my'}{c.ssh?.host ? ' · ssh' : ''}</span>
+          <span class="sub">{c.driver === 'postgres' ? 'pg' : c.driver === 'opensearch' ? 'os' : 'my'}{c.ssh?.host ? ' · ssh' : ''}</span>
         </div>
 
         {#if s.open}
@@ -117,7 +117,7 @@
                 <!-- tables -->
                 <div class="node folder" style={pad(2 + lvl)} role="treeitem" on:click={() => dispatch('dbFolder', { id: c.id, db: d, folder: 'tables' })}>
                   <span class="chev" class:open={isOpen(ds.folders, 'tables')}>{@html icons.chevron}</span>
-                  <span class="ic">{@html icons.folder}</span><span class="name">tables</span><span class="count">{ds.tables.length}</span>
+                  <span class="ic">{@html icons.folder}</span><span class="name">{c.driver === 'opensearch' ? 'indices' : 'tables'}</span><span class="count">{ds.tables.length}</span>
                 </div>
                 {#if isOpen(ds.folders, 'tables')}
                   {#each listOf(c, d, ds.tables) as t (t)}
@@ -181,7 +181,7 @@
                 {#if ds.views?.length}
                   <div class="node folder" style={pad(2 + lvl)} role="treeitem" on:click={() => dispatch('dbFolder', { id: c.id, db: d, folder: 'views' })}>
                     <span class="chev" class:open={ds.folders?.views}>{@html icons.chevron}</span>
-                    <span class="ic">{@html icons.folder}</span><span class="name">views</span><span class="count">{ds.views.length}</span>
+                    <span class="ic">{@html icons.folder}</span><span class="name">{c.driver === 'opensearch' ? 'aliases' : 'views'}</span><span class="count">{ds.views.length}</span>
                   </div>
                   {#if ds.folders?.views}
                     {#each listOf(c, d, ds.views) as v (v)}

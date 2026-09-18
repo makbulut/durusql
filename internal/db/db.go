@@ -20,8 +20,9 @@ import (
 
 type Conn struct {
 	Cfg config.Connection
-	DB  *sql.DB
+	DB  *sql.DB // nil for document stores
 	ssh *ssh.Client
+	doc *docStore // OpenSearch / Elasticsearch
 }
 
 type Result struct {
@@ -58,6 +59,15 @@ func Open(c config.Connection) (*Conn, error) {
 	}
 
 	switch c.Driver {
+	case "opensearch", "elasticsearch":
+		d, err := openDoc(c, dialer)
+		if err != nil {
+			conn.Close()
+			return nil, err
+		}
+		conn.doc = d
+		return conn, nil
+
 	case "mysql", "mariadb":
 		mc := mysql.NewConfig()
 		mc.User, mc.Passwd, mc.DBName = c.User, c.Password, c.Database
@@ -153,6 +163,9 @@ func (c *Conn) Close() {
 	if c.DB != nil {
 		c.DB.Close()
 	}
+	if c.doc != nil {
+		c.doc.close()
+	}
 	if c.ssh != nil {
 		c.ssh.Close()
 	}
@@ -181,6 +194,9 @@ func (c *Conn) Query(ctx context.Context, q string, limit int) (*Result, error) 
 // so unqualified table names in a console resolve against the database picked in the UI.
 // The default is set on the dedicated pooled connection right before the statement.
 func (c *Conn) QueryIn(ctx context.Context, schema, q string, limit int) (*Result, error) {
+	if c.doc != nil {
+		return c.doc.run(ctx, q, limit)
+	}
 	start := time.Now()
 	res := &Result{Columns: []string{}, Rows: [][]any{}}
 
@@ -272,6 +288,9 @@ func normalize(v any) any {
 // Databases lists the schemas a user would browse: MySQL databases, or PostgreSQL schemas
 // of the connected database. The connection's default database/schema comes first.
 func (c *Conn) Databases(ctx context.Context) ([]string, error) {
+	if c.doc != nil {
+		return []string{c.doc.cluster}, nil
+	}
 	var q string
 	if c.isPG() {
 		q = `SELECT schema_name FROM information_schema.schemata
@@ -287,6 +306,13 @@ func (c *Conn) Databases(ctx context.Context) ([]string, error) {
 
 // Tables lists the tables and views of one schema/database.
 func (c *Conn) Tables(ctx context.Context, schema string) ([]string, error) {
+	if c.doc != nil {
+		o, err := c.doc.schemaObjects(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return o.Tables, nil
+	}
 	var q string
 	if c.isPG() {
 		q = `SELECT table_name FROM information_schema.tables WHERE table_schema = $1 ORDER BY 1`
@@ -314,6 +340,9 @@ func (c *Conn) strings(ctx context.Context, q string, args ...any) ([]string, er
 }
 
 func (c *Conn) Columns(ctx context.Context, table string) ([]Column, error) {
+	if c.doc != nil {
+		return c.doc.columns(ctx, table)
+	}
 	var rows *sql.Rows
 	var err error
 	if c.isPG() {
@@ -359,6 +388,9 @@ func (c *Conn) Columns(ctx context.Context, table string) ([]Column, error) {
 
 // Quote returns a driver-appropriate quoted identifier.
 func (c *Conn) Quote(ident string) string {
+	if c.doc != nil {
+		return c.doc.quote(ident)
+	}
 	parts := strings.Split(ident, ".")
 	for i, p := range parts {
 		if c.isPG() {

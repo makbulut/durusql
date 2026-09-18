@@ -447,7 +447,7 @@ func (a *App) RunScript(id, schema, script string, limit int, runID string) (*Sc
 			h.Rows = int(r.RowsAffected)
 		}
 		a.store.AppendHistory(id, h)
-		if t := db.DetectTable(r.SQL); t != "" && len(r.Columns) > 0 {
+		if t := db.DetectTable(r.SQL); t != "" && len(r.Columns) > 0 && !c.IsDoc() {
 			if !strings.Contains(t, ".") {
 				if schema != "" {
 					t = schema + "." + t
@@ -546,7 +546,7 @@ func (a *App) RunQueryIn(id, schema, sql string, limit int) (*db.Result, error) 
 		h.Err = err.Error()
 	} else {
 		h.Ms, h.Rows = res.Ms, len(res.Rows)
-		if t := db.DetectTable(sql); t != "" && len(res.Columns) > 0 {
+		if t := db.DetectTable(sql); t != "" && len(res.Columns) > 0 && !c.IsDoc() {
 			// qualify with the console's database so grid edits always target the right one
 			if !strings.Contains(t, ".") {
 				if schema != "" {

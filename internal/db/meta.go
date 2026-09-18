@@ -44,6 +44,9 @@ type Extension struct {
 
 // DatabaseObjectsList returns extensions and languages of the connected PostgreSQL database.
 func (c *Conn) DatabaseObjectsList(ctx context.Context) (*DatabaseObjects, error) {
+	if c.doc != nil {
+		return &DatabaseObjects{Database: c.doc.cluster, Extensions: []Extension{}, Languages: []string{}}, nil
+	}
 	out := &DatabaseObjects{Database: c.Cfg.Database, Extensions: []Extension{}, Languages: []string{}}
 	if !c.isPG() {
 		return out, nil
@@ -166,6 +169,9 @@ func (c *Conn) splitTable(table string) (schema, name string) {
 
 // SchemaObjects lists tables, views, routines and (MySQL) events of one schema.
 func (c *Conn) SchemaObjects(ctx context.Context, schema string) (*SchemaObjects, error) {
+	if c.doc != nil {
+		return c.doc.schemaObjects(ctx)
+	}
 	out := &SchemaObjects{Tables: []string{}, Views: []string{}, Routines: []Routine{}, Events: []string{}, Sequences: []Sequence{}, Types: []TypeInfo{}}
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -287,6 +293,9 @@ func (c *Conn) SchemaObjects(ctx context.Context, schema string) (*SchemaObjects
 // TableDetails collects the structure of one table for the explorer. Sections that fail are
 // reported in Errors rather than hiding the whole table.
 func (c *Conn) TableDetails(ctx context.Context, table string) (*TableDetails, error) {
+	if c.doc != nil {
+		return c.doc.tableDetails(ctx, table)
+	}
 	start := time.Now()
 	schema, name := c.splitTable(table)
 	d := &TableDetails{Columns: []ColumnInfo{}, Keys: []KeyInfo{}, ForeignKeys: []ForeignKeyInfo{}, Indexes: []IndexInfo{}, Triggers: []TriggerInfo{}, Partitions: []PartitionInfo{}}
@@ -741,6 +750,9 @@ type ColumnRef struct {
 // SchemaColumns returns every column of every table/view in one schema, keyed by table name.
 // One information_schema query, so the editor can complete columns without expanding tables.
 func (c *Conn) SchemaColumns(ctx context.Context, schema string) (map[string][]ColumnRef, error) {
+	if c.doc != nil {
+		return c.doc.schemaColumns(ctx)
+	}
 	var q string
 	if c.isPG() {
 		q = `SELECT table_name, column_name, CASE WHEN data_type = 'USER-DEFINED' THEN udt_name ELSE data_type END
@@ -842,6 +854,9 @@ type SearchHit struct {
 func (c *Conn) Search(ctx context.Context, term string, limit int) ([]SearchHit, error) {
 	if limit <= 0 {
 		limit = 100
+	}
+	if c.doc != nil {
+		return c.doc.search(ctx, term, limit)
 	}
 	like := "%" + strings.NewReplacer("%", "\\%", "_", "\\_").Replace(term) + "%"
 	var sysFilter, colSys, rtSys string

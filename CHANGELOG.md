@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- OpenSearch / Elasticsearch connections (driver "OpenSearch / Elasticsearch", port 9200, optional HTTPS with a skip-certificate-check switch, SSH tunnel). Indices are listed as tables under the cluster name, mappings as columns (nested fields flattened to dotted paths), aliases as views. The index view pages and filters through the SQL plugin; the console runs SQL statements and Dev Tools style REST requests (`GET /index/_search` followed by a JSON body), one result tab per request; search hits, `_cat` listings and plain objects become grid rows. Read-only: no grid edits, Modify dialog, dumps or transactions. "Mapping in console" shows settings + mappings as a replayable `PUT`; "Delete all documents…" runs `_delete_by_query`.
+
 ## 0.6.0-beta.1 (2026-09-18)
 
 First public beta of DuruSQL (formerly dbtool).

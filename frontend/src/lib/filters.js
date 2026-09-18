@@ -53,10 +53,19 @@ export function composeWhere(where, filters, driver) {
   return parts.join(' AND ')
 }
 
+// OpenSearch has no databases: the explorer's pseudo database (the cluster name) is dropped
+// from qualified names and the index is quoted with backticks like the SQL plugin expects.
+export function tableRef(table, driver) {
+  if (driver !== 'opensearch') return table
+  const parts = table.split('.')
+  const index = parts.length > 1 ? parts.slice(1).join('.') : table
+  return '`' + index.replaceAll('`', '``') + '`'
+}
+
 // probe=true asks for one row more than the page so the backend can tell whether a next page
 // exists (it stops at pageSize rows and flags the result as truncated).
 export function tableSQL(t, driver, probe = false) {
-  let q = `SELECT * FROM ${t.table}`
+  let q = `SELECT * FROM ${tableRef(t.table, driver)}`
   const w = composeWhere(t.where, t.filters, driver)
   if (w) q += ` WHERE ${w}`
   if (t.orderBy?.trim()) q += ` ORDER BY ${t.orderBy.trim()}`
@@ -67,7 +76,7 @@ export function tableSQL(t, driver, probe = false) {
 
 // the same query without paging, for exports
 export function tableSQLAll(t, driver) {
-  let q = `SELECT * FROM ${t.table}`
+  let q = `SELECT * FROM ${tableRef(t.table, driver)}`
   const w = composeWhere(t.where, t.filters, driver)
   if (w) q += ` WHERE ${w}`
   if (t.orderBy?.trim()) q += ` ORDER BY ${t.orderBy.trim()}`

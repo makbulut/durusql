@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -125,6 +126,9 @@ func (s *Session) Open() bool { return s != nil && s.tx != nil }
 
 // Begin starts a transaction on a dedicated connection with schema as default database.
 func (c *Conn) Begin(ctx context.Context, schema string) (*Session, error) {
+	if c.doc != nil {
+		return nil, fmt.Errorf("transactions are %w", errDocUnsupported)
+	}
 	cn, err := c.DB.Conn(ctx)
 	if err != nil {
 		return nil, err
@@ -210,6 +214,9 @@ func (c *Conn) runOne(ctx context.Context, ex execer, q string, limit int) (*Res
 // mode) they run inside it; otherwise on one pooled connection with schema as default database.
 // Execution stops at the first error; the results so far are returned together with the error.
 func (c *Conn) RunScript(ctx context.Context, sess *Session, schema, script string, limit int) ([]*Result, error) {
+	if c.doc != nil {
+		return c.doc.runScript(ctx, script, limit)
+	}
 	stmts := SplitStatements(script)
 	if len(stmts) == 0 {
 		return nil, nil

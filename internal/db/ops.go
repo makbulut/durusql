@@ -12,12 +12,18 @@ import (
 
 // Truncate empties a table.
 func (c *Conn) Truncate(ctx context.Context, table string) error {
+	if c.doc != nil {
+		return c.doc.truncate(ctx, table)
+	}
 	_, err := c.DB.ExecContext(ctx, "TRUNCATE TABLE "+c.Quote(table))
 	return err
 }
 
 // DDL returns the CREATE statement of a table (MySQL/MariaDB only).
 func (c *Conn) DDL(ctx context.Context, table string) (string, error) {
+	if c.doc != nil {
+		return c.doc.ddl(ctx, table)
+	}
 	if c.isPG() {
 		return "", fmt.Errorf("DDL export is only available for MySQL/MariaDB; use pg_dump (structure only) for PostgreSQL")
 	}
@@ -46,6 +52,9 @@ func (c *Conn) DDL(ctx context.Context, table string) (string, error) {
 
 // ViewDDL returns the definition of a view.
 func (c *Conn) ViewDDL(ctx context.Context, view string) (string, error) {
+	if c.doc != nil {
+		return c.doc.aliasDDL(ctx, view)
+	}
 	if c.isPG() {
 		schema, name := c.splitTable(view)
 		var def string
@@ -65,6 +74,9 @@ func (c *Conn) ViewDDL(ctx context.Context, view string) (string, error) {
 
 // RoutineSource returns the CREATE statement of a stored function / procedure.
 func (c *Conn) RoutineSource(ctx context.Context, schema, name, kind string) (string, error) {
+	if c.doc != nil {
+		return "", errDocUnsupported
+	}
 	if c.isPG() {
 		rows, err := c.DB.QueryContext(ctx, `
 			SELECT pg_get_functiondef(p.oid) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
@@ -138,6 +150,9 @@ func secondColumn(rows *sql.Rows) (string, error) {
 // ExportCSV streams the result of q (run with schema as default database) to w as CSV.
 // Returns the number of data rows written.
 func (c *Conn) ExportCSV(ctx context.Context, schema, q string, w io.Writer) (int64, error) {
+	if c.doc != nil {
+		return c.exportCSVDoc(ctx, q, w)
+	}
 	cn, err := c.DB.Conn(ctx)
 	if err != nil {
 		return 0, err

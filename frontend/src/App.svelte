@@ -15,7 +15,7 @@
   import Confirm from './lib/Confirm.svelte'
   import SearchDialog from './lib/SearchDialog.svelte'
   import UpdateDialog from './lib/UpdateDialog.svelte'
-  import { tableSQL, tableSQLAll } from './lib/filters.js'
+  import { tableSQL, tableSQLAll, tableRef } from './lib/filters.js'
   import { icons } from './lib/icons.js'
   import { splitter, clamp, remember, persist } from './lib/splitter.js'
   import * as api from './lib/api.js'
@@ -496,6 +496,8 @@
     else { const nt = newTab(id, { kind: 'table', table, where: '', orderBy: '', filters: {}, page: 0, pageSize: 500 }); tableChange(nt, { page: 0 }) }
   }
   const driverOf = id => connections.find(c => c.id === id)?.driver || 'mysql'
+  const isDoc = id => driverOf(id) === 'opensearch'   // OpenSearch / Elasticsearch: read-only indices, no SQL DDL
+  const ref = (id, table) => tableRef(table, driverOf(id))
   // filters / paging / sort changed in a table tab: store them and reload
   function tableChange(t, p) {
     upd(t.id, { ...p, loadedOnce: true })
@@ -503,7 +505,7 @@
     runIn(nt, tableSQL(nt, driverOf(nt.connId), true), nt.pageSize || 500)
   }
   function insertTable({ id, table }) {
-    const sql = `SELECT * FROM ${table} LIMIT 100`
+    const sql = `SELECT * FROM ${ref(id, table)} LIMIT 100`
     if (tab && tab.kind === 'console') upd(tab.id, { connId: id, sql })
     else newTab(id, { sql })
   }
@@ -668,6 +670,12 @@
     const kindOf = { column: 'column', key: 'key', fk: 'fk', index: 'index' }[kind]
     const labels = { column: 'column', key: 'key', fk: 'foreign key', index: 'index' }
     const items = []
+    if (isDoc(conn.id)) {
+      if (!folder && item) items.push({ label: 'Copy name', action: () => navigator.clipboard.writeText(item.name) })
+      items.push({ label: 'Mapping in console', action: () => showDDL(conn.id, table) })
+      menu = { x, y, items }
+      return
+    }
     if (kindOf) {
       if (!folder && item) items.push({ label: `Modify ${labels[kindOf]}…`, hint: 'dbl-click', action: () => openTableEditor(conn, db, table, { kind: kindOf, name: item.name }) })
       items.push({ label: `Add ${labels[kindOf]}…`, action: () => openTableEditor(conn, db, table, { kind: kindOf, name: '__new__' }) })
@@ -762,10 +770,10 @@
     menu = { x, y, items: [
       { label: 'Open view', action: () => openTable({ id: conn.id, table: view }) },
       { label: 'SELECT in console', action: () => insertTable({ id: conn.id, table: view }) },
-      { label: 'DDL in console', action: () => showViewDDL(conn.id, view) },
+      { label: isDoc(conn.id) ? 'Alias definition in console' : 'DDL in console', action: () => showViewDDL(conn.id, view) },
       { sep: true },
       { label: 'Copy name', action: () => navigator.clipboard.writeText(view.split('.').pop()) },
-      { label: 'Export to CSV…', action: () => exportCSV(conn.id, '', `SELECT * FROM ${view}`, view.split('.').pop()) },
+      { label: 'Export to CSV…', action: () => exportCSV(conn.id, '', `SELECT * FROM ${ref(conn.id, view)}`, view.split('.').pop()) },
     ]}
   }
   function routineMenu({ x, y, conn, db, routine }) {
@@ -789,7 +797,7 @@
       { label: 'New query console', hint: 'Ctrl+T', action: () => newTab(conn.id) },
       { sep: true },
       { label: conn.favorite ? 'Remove from favorites' : 'Add to favorites', action: () => toggleConnFavorite(conn) },
-      { label: `Restore with ${driverOf(conn.id) === 'postgres' ? 'psql' : 'mysql'}…`, hint: 'import dump', action: () => openRestore(conn, conn.database || '') },
+      ...(isDoc(conn.id) ? [] : [{ label: `Restore with ${driverOf(conn.id) === 'postgres' ? 'psql' : 'mysql'}…`, hint: 'import dump', action: () => openRestore(conn, conn.database || '') }]),
       { label: 'Edit…', hint: 'properties', action: () => editing = conn },
       { label: 'Duplicate', action: () => editing = { ...conn, id: '', name: conn.name + ' copy' } },
       { sep: true },
@@ -804,11 +812,13 @@
       { label: 'Refresh', action: () => { patchDb(conn.id, db, { loading: true }); loadDb(conn.id, db) }, disabled: !ds.open },
       { sep: true },
       { label: 'New query console', hint: 'Ctrl+T', action: () => newTab(conn.id, { db }) },
-      { label: 'New table…', action: () => openTableEditor(conn, db) },
+      ...(isDoc(conn.id) ? [] : [{ label: 'New table…', action: () => openTableEditor(conn, db) }]),
       { label: 'Copy name', action: () => navigator.clipboard.writeText(db) },
-      { sep: true },
-      { label: `Export with ${driverOf(conn.id) === 'postgres' ? 'pg_dump' : 'mysqldump'}…`, action: () => openDump(conn, db) },
-      { label: `Restore with ${driverOf(conn.id) === 'postgres' ? 'psql' : 'mysql'}…`, action: () => openRestore(conn, db) },
+      ...(isDoc(conn.id) ? [] : [
+        { sep: true },
+        { label: `Export with ${driverOf(conn.id) === 'postgres' ? 'pg_dump' : 'mysqldump'}…`, action: () => openDump(conn, db) },
+        { label: `Restore with ${driverOf(conn.id) === 'postgres' ? 'psql' : 'mysql'}…`, action: () => openRestore(conn, db) },
+      ]),
     ]}
   }
   function tableMenu({ x, y, conn, table }) {
@@ -816,6 +826,24 @@
     const [db, ...rest] = table.split('.')
     const bare = rest.join('.') || table
     const pg = driverOf(conn.id) === 'postgres'
+    if (isDoc(conn.id)) {
+      const count = `SELECT COUNT(*) FROM ${ref(conn.id, table)}`
+      menu = { x, y, items: [
+        { label: 'Open index', hint: 'dbl-click', action: () => openTable({ id: conn.id, table }) },
+        { label: 'SELECT in console', action: () => insertTable({ id: conn.id, table }) },
+        { label: 'Search in console', action: () => newTab(conn.id, { sql: `GET /${bare}/_search\n{\n  "size": 100,\n  "query": { "match_all": {} }\n}`, db }) },
+        { label: 'Count documents', action: () => runIn(newTab(conn.id, { sql: count, db }), count) },
+        { label: 'Mapping in console', hint: 'settings + mappings', action: () => showDDL(conn.id, table) },
+        { sep: true },
+        { label: fav ? 'Remove from favorites' : 'Add to favorites', action: () => toggleFavTable(conn.id, table) },
+        { label: 'Copy name', action: () => navigator.clipboard.writeText(bare) },
+        { sep: true },
+        { label: 'Export to CSV…', action: () => exportCSV(conn.id, '', `SELECT * FROM ${ref(conn.id, table)} LIMIT 10000`, bare) },
+        { sep: true },
+        { label: 'Delete all documents…', danger: true, action: () => truncateTable(conn.id, table) },
+      ]}
+      return
+    }
     menu = { x, y, items: [
       { label: 'Open table', hint: 'dbl-click', action: () => openTable({ id: conn.id, table }) },
       { label: 'SELECT in console', action: () => insertTable({ id: conn.id, table }) },
@@ -888,7 +916,7 @@
     on:menuRoutine={e => routineMenu(e.detail)}
     on:routine={e => showRoutine(e.detail)}
     on:menuDetail={e => detailMenu(e.detail)}
-    on:modify={e => { const conn = connections.find(c => c.id === e.detail.id); openTableEditor(conn, e.detail.table.split('.')[0], e.detail.table, { kind: { column: 'column', key: 'key', fk: 'fk', index: 'index' }[e.detail.kind], name: e.detail.item.name }) }}
+    on:modify={e => { if (isDoc(e.detail.id)) return; const conn = connections.find(c => c.id === e.detail.id); openTableEditor(conn, e.detail.table.split('.')[0], e.detail.table, { kind: { column: 'column', key: 'key', fk: 'fk', index: 'index' }[e.detail.kind], name: e.detail.item.name }) }}
   />
 
   <div class="split v" use:splitter={{ axis: 'x', get: () => sidebarW, set: v => sidebarW = clamp(v, 180, 700), done: () => persist('durusql.sidebarW', sidebarW) }}></div>

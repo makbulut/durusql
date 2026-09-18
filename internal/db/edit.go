@@ -41,6 +41,9 @@ func DetectTable(q string) string {
 
 // PrimaryKey returns the primary-key column names of table ("schema.table" or "table").
 func (c *Conn) PrimaryKey(ctx context.Context, table string) ([]string, error) {
+	if c.doc != nil {
+		return nil, nil
+	}
 	schema, name := "", table
 	if i := strings.LastIndexByte(table, '.'); i > 0 {
 		schema, name = table[:i], table[i+1:]
@@ -72,6 +75,9 @@ func (c *Conn) PrimaryKey(ctx context.Context, table string) ([]string, error) {
 // Apply runs all changes against table inside one transaction. Every UPDATE/DELETE must match
 // exactly one row, otherwise the whole batch is rolled back.
 func (c *Conn) Apply(ctx context.Context, table string, changes []Change) (int64, error) {
+	if c.doc != nil {
+		return 0, fmt.Errorf("grid edits are %w", errDocUnsupported)
+	}
 	tx, err := c.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
@@ -88,6 +94,9 @@ func (c *Conn) Apply(ctx context.Context, table string, changes []Change) (int64
 // With a savepoint-less driver we cannot undo a partial batch, so the multi-row guard is checked
 // before each statement runs by counting matches first.
 func (c *Conn) ApplyIn(ctx context.Context, sess *Session, table string, changes []Change) (int64, error) {
+	if c.doc != nil {
+		return 0, fmt.Errorf("grid edits are %w", errDocUnsupported)
+	}
 	if !sess.Open() {
 		return 0, fmt.Errorf("no open transaction")
 	}

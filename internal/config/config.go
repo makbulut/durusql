@@ -37,12 +37,14 @@ type Connection struct {
 	ID       string     `yaml:"id" json:"id"`
 	Name     string     `yaml:"name" json:"name"`
 	Group    string     `yaml:"group,omitempty" json:"group"`
-	Driver   string     `yaml:"driver" json:"driver"` // mysql | postgres
+	Driver   string     `yaml:"driver" json:"driver"` // mysql | postgres | opensearch | elasticsearch
 	Host     string     `yaml:"host" json:"host"`
 	Port     int        `yaml:"port" json:"port"`
 	User     string     `yaml:"user" json:"user"`
 	Password string     `yaml:"password,omitempty" json:"password"`
 	Database string     `yaml:"database" json:"database"`
+	TLS      bool       `yaml:"tls,omitempty" json:"tls"`           // OpenSearch/Elasticsearch: https
+	Insecure bool       `yaml:"insecure,omitempty" json:"insecure"` // OpenSearch/Elasticsearch: skip certificate verification
 	Favorite bool       `yaml:"favorite" json:"favorite"`
 	Color    string     `yaml:"color,omitempty" json:"color"`
 	SSH      *SSHConfig `yaml:"ssh,omitempty" json:"ssh"`
@@ -136,6 +138,8 @@ func (s *Store) Save(c Connection) (Connection, error) {
 	if c.Port == 0 {
 		if c.Driver == "postgres" {
 			c.Port = 5432
+		} else if c.Driver == "opensearch" || c.Driver == "elasticsearch" {
+			c.Port = 9200
 		} else {
 			c.Port = 3306
 		}

@@ -12,6 +12,21 @@ import (
 
 // stream runs q (schema as default database) and calls fn for the header and every row.
 func (c *Conn) stream(ctx context.Context, schema, q string, header func([]string) error, row func([]any) error) (int64, error) {
+	if c.doc != nil {
+		res, err := c.doc.run(ctx, q, 0)
+		if err != nil {
+			return 0, err
+		}
+		if err := header(res.Columns); err != nil {
+			return 0, err
+		}
+		for i, r := range res.Rows {
+			if err := row(r); err != nil {
+				return int64(i), err
+			}
+		}
+		return int64(len(res.Rows)), nil
+	}
 	cn, err := c.DB.Conn(ctx)
 	if err != nil {
 		return 0, err

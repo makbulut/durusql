@@ -14,7 +14,8 @@
   let ssh = { host: '', port: 22, user: '', keyPath: '~/.ssh/id_ed25519', password: '', useAgent: true, ...(c.ssh || {}) }
   let msg = '', busy = false
 
-  $: if (c.port === 0) c.port = c.driver === 'postgres' ? 5432 : 3306
+  $: if (c.port === 0) c.port = c.driver === 'postgres' ? 5432 : c.driver === 'opensearch' ? 9200 : 3306
+  $: isDoc = c.driver === 'opensearch'
 
   function payload() {
     return { ...c, port: Number(c.port), ssh: useSSH ? { ...ssh, port: Number(ssh.port) } : null }
@@ -45,14 +46,20 @@
         <select id="driver" bind:value={c.driver} on:change={() => c.port = 0}>
           <option value="mysql">MySQL / MariaDB</option>
           <option value="postgres">PostgreSQL</option>
+          <option value="opensearch">OpenSearch / Elasticsearch</option>
         </select></div>
       <div><label for="color">Color</label><input id="color" type="color" bind:value={c.color} /></div>
       <div class="span2"><label for="host">Host</label><input id="host" bind:value={c.host} required /></div>
       <div><label for="port">Port</label><input id="port" type="number" bind:value={c.port} /></div>
-      <div><label for="db">Database</label><input id="db" bind:value={c.database} /></div>
+      {#if isDoc}
+        <div class="doc"><label class="check inline"><input type="checkbox" bind:checked={c.tls} /> HTTPS</label><label class="check inline"><input type="checkbox" bind:checked={c.insecure} disabled={!c.tls} /> Skip certificate check</label></div>
+      {:else}
+        <div><label for="db">Database</label><input id="db" bind:value={c.database} /></div>
+      {/if}
       <div><label for="user">User</label><input id="user" bind:value={c.user} /></div>
       <div><label for="pw">Password</label><input id="pw" type="password" bind:value={c.password} /></div>
     </div>
+    {#if isDoc}<p class="muted small">Indices are listed as tables and aliases as views. The console runs SQL (via the SQL plugin) and raw REST requests such as <code>GET /index/_search</code> followed by a JSON body. Leave user empty when security is disabled.</p>{/if}
 
     <label class="check"><input type="checkbox" bind:checked={useSSH} /> Connect through SSH tunnel</label>
     {#if useSSH}
@@ -85,6 +92,8 @@
   .ssh { margin-top: 8px; padding: 10px; background: var(--bg); border-radius: 0; }
   .check { display: flex; align-items: center; gap: 8px; margin: 14px 0 4px; color: var(--fg); }
   .check input { width: auto; }
+  .doc { display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; }
+  .check.inline { margin: 0; font-size: 12px; }
   .small { font-size: 12px; margin: 6px 0 0; }
   .actions { display: flex; gap: 8px; align-items: center; margin-top: 16px; }
   .msg { flex: 1; font-size: 12px; }

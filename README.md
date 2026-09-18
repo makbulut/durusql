@@ -3,7 +3,7 @@
 Fast, DataGrip-style database client for Linux, Windows and macOS. Go + Wails v2 + Svelte. MIT licensed.
 **Beta**: things work, edges are rough; please open issues.
 
-Supports MySQL/MariaDB and PostgreSQL, SSH tunnels (agent / key / password),
+Supports MySQL/MariaDB, PostgreSQL and OpenSearch/Elasticsearch (read-only, SQL + REST console), SSH tunnels (agent / key / password),
 multiple grouped connections with favorites, per-connection saved queries
 (plain `.sql` files, git-friendly) and per-connection favorite tables.
 
