@@ -119,9 +119,9 @@ build() {
     say "Building DuruSQL"
     mkdir -p build
     if have_tty; then
-        wails build -ldflags "-X main.version=$(cat "$ROOT/VERSION" 2>/dev/null || echo dev)" ${WEBKIT_TAG:+-tags $WEBKIT_TAG} || { show_compile_error; fail "build failed"; }
+        wails build -ldflags "-X main.version=$(cat "$ROOT/VERSION" 2>/dev/null || echo dev) -X main.updateSource=$(cat "$ROOT/UPDATE_SOURCE" 2>/dev/null || true)" ${WEBKIT_TAG:+-tags $WEBKIT_TAG} || { show_compile_error; fail "build failed"; }
     else
-        wails build -ldflags "-X main.version=$(cat "$ROOT/VERSION" 2>/dev/null || echo dev)" ${WEBKIT_TAG:+-tags $WEBKIT_TAG} >"$LOG" 2>&1 || { show_compile_error >>"$LOG" 2>&1; fail "build failed, see $LOG"; }
+        wails build -ldflags "-X main.version=$(cat "$ROOT/VERSION" 2>/dev/null || echo dev) -X main.updateSource=$(cat "$ROOT/UPDATE_SOURCE" 2>/dev/null || true)" ${WEBKIT_TAG:+-tags $WEBKIT_TAG} >"$LOG" 2>&1 || { show_compile_error >>"$LOG" 2>&1; fail "build failed, see $LOG"; }
     fi
 }
 

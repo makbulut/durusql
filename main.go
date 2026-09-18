@@ -24,7 +24,7 @@ var version = "dev"
 var updateSource = ""
 
 func main() {
-	importDG := flag.Bool("import-datagrip", false, "import DataGrip data sources into ~/.config/rowdy and exit")
+	importDG := flag.Bool("import-datagrip", false, "import DataGrip data sources into ~/.config/durusql and exit")
 	flag.Parse()
 	if *importDG {
 		os.Exit(runImportDataGrip())
