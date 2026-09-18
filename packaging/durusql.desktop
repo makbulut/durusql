@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=DuruSQL
+Comment=Lightweight DataGrip-style database client
+Exec=durusql
+Icon=durusql
+Terminal=false
+Categories=Development;Database;
+StartupNotify=true
+StartupWMClass=durusql
