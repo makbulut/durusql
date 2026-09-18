@@ -8,6 +8,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; cd "$ROOT"
 VERSION="${1:-$(cat VERSION 2>/dev/null || echo 0.1.0)}"
 CHANNEL="${2:-$( [[ "$VERSION" == *-* ]] && echo beta || echo stable )}"   # 0.6.0-beta.1 → beta
+# Debian version: a pre-release must sort BELOW its final release, which Debian spells with a tilde
+# (0.6.0~beta.2 < 0.6.0). With a hyphen the suffix would be a package revision and every beta
+# would look like the same "0.6.0" to apt and the App Center. File names keep the hyphen.
+DEBVER="${VERSION//-/\~}"
+NOTES=$(awk -v v="$VERSION" '/^## /{ if (found) exit; if (index($0, v)) { found=1; next } } found' CHANGELOG.md 2>/dev/null || true)
 UPDATE_SOURCE="${DURUSQL_UPDATE_SOURCE:-$(cat UPDATE_SOURCE 2>/dev/null || true)}"   # e.g. https://github.com/makbulut/durusql
 LD="-X main.version=$VERSION -X main.updateSource=$UPDATE_SOURCE"
 ARCH="$(dpkg --print-architecture 2>/dev/null || uname -m)"
@@ -44,15 +49,47 @@ strip build/bin/durusql 2>/dev/null || true
 
 # ---- .deb ----
 DEB="dist/deb"; rm -rf "$DEB"
-mkdir -p "$DEB/DEBIAN" "$DEB/usr/bin" "$DEB/usr/share/applications" "$DEB/usr/share/icons/hicolor/scalable/apps" "$DEB/usr/share/doc/durusql"
+mkdir -p "$DEB/DEBIAN" "$DEB/usr/bin" "$DEB/usr/share/applications" "$DEB/usr/share/icons/hicolor/scalable/apps" "$DEB/usr/share/doc/durusql" "$DEB/usr/share/metainfo"
 install -m 755 build/bin/durusql "$DEB/usr/bin/durusql"
 install -m 644 packaging/durusql.desktop "$DEB/usr/share/applications/durusql.desktop"
 install -m 644 packaging/durusql.svg "$DEB/usr/share/icons/hicolor/scalable/apps/durusql.svg"
 install -m 644 README.md "$DEB/usr/share/doc/durusql/README.md"
+# AppStream metadata: name, icon, description and release notes in GNOME Software / App Center
+python3 - "$DEBVER" "$NOTES" > "$DEB/usr/share/metainfo/durusql.metainfo.xml" <<'PY'
+import sys, datetime
+from xml.sax.saxutils import escape
+ver, notes = sys.argv[1], sys.argv[2]
+items = [l.strip()[2:] for l in notes.splitlines() if l.strip().startswith("- ")]
+paras = [l.strip() for l in notes.splitlines() if l.strip() and not l.strip().startswith("- ")]
+desc = "".join(f"<p>{escape(p)}</p>" for p in paras) + ("<ul>" + "".join(f"<li>{escape(i)}</li>" for i in items) + "</ul>" if items else "")
+if not desc: desc = f"<p>DuruSQL {escape(ver)}</p>"
+print(f"""<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.tr.mehmetakbulut.durusql</id>
+  <name>DuruSQL</name>
+  <summary>Lightweight DataGrip-style database client</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="com.tr.mehmetakbulut"><name>Mehmet Akbulut</name></developer>
+  <description>
+    <p>MySQL/MariaDB, PostgreSQL and OpenSearch/Elasticsearch client with SSH tunnels, editable grids, console tabs, saved queries, dumps and restores. Connections are stored per user in ~/.config/durusql.</p>
+  </description>
+  <launchable type="desktop-id">durusql.desktop</launchable>
+  <provides><binary>durusql</binary></provides>
+  <url type="homepage">https://github.com/makbulut/durusql</url>
+  <url type="bugtracker">https://github.com/makbulut/durusql/issues</url>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="{escape(ver)}" date="{datetime.date.today().isoformat()}">
+      <description>{desc}</description>
+    </release>
+  </releases>
+</component>""")
+PY
 SIZE=$(du -sk "$DEB/usr" | cut -f1)
 cat > "$DEB/DEBIAN/control" <<CTRL
 Package: durusql
-Version: $VERSION
+Version: $DEBVER
 Section: database
 Priority: optional
 Architecture: $ARCH
@@ -87,7 +124,6 @@ fi
 
 # ---- checksums + channel document (for self-hosted JSON channels; GitHub uses SHA256SUMS + the API) ----
 (cd dist && shopt -s nullglob && sha256sum *.deb *.tar.gz *.zip *.exe *.dmg > SHA256SUMS)
-NOTES=$(awk -v v="$VERSION" '/^## /{ if (found) exit; if (index($0, v)) { found=1; next } } found' CHANGELOG.md 2>/dev/null || true)
 python3 - "$VERSION" "$CHANNEL" "$UPDATE_SOURCE" "$NOTES" <<'PY'
 import json, os, sys, hashlib, glob
 ver, channel, base, notes = sys.argv[1:5]

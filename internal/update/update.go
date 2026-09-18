@@ -203,7 +203,9 @@ func Install(kind, path string) (restart bool, err error) {
 		return true, replaceFromZip(path)
 	case "linux-deb":
 		// needs root: polkit prompt via pkexec
-		cmd := exec.Command("pkexec", "apt-get", "install", "-y", path)
+		// --allow-downgrades: packages before 0.6.0-beta.2 used a hyphen version that apt sorts above
+		// the tilde form used since, so the first update from them looks like a downgrade
+		cmd := exec.Command("pkexec", "apt-get", "install", "-y", "--allow-downgrades", path)
 		out, err := cmd.CombinedOutput()
 		if err != nil {
 			return false, fmt.Errorf("apt-get install failed: %s", strings.TrimSpace(string(out)))
