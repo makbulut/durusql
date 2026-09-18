@@ -59,8 +59,8 @@ Architecture: $ARCH
 Installed-Size: $SIZE
 Depends: libwebkit2gtk-4.1-0, libgtk-3-0
 Recommends: mariadb-client | mysql-client, postgresql-client
-Maintainer: Mehmet Akbulut <mehmet.akbulut@iceshop.nl>
-Homepage: https://iceshop.nl
+Maintainer: Mehmet Akbulut <info@mehmetakbulut.com.tr>
+Homepage: https://github.com/makbulut/durusql
 Description: Lightweight DataGrip-style database client
  MySQL/MariaDB and PostgreSQL client with SSH tunnels, editable grids,
  console tabs, saved queries, dumps and restores. Connections are stored
