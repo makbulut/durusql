@@ -6,7 +6,7 @@
 #   ./run.sh clean    remove build output, deps and generated files
 #
 # First run installs everything it needs (asks for sudo once for the WebKit dev package),
-# and registers a "durusql" entry in the desktop app launcher.
+# and registers a "DuruSQL (dev)" entry in the desktop app launcher (separate from the packaged one).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -127,14 +127,14 @@ build() {
 
 install_desktop_entry() {
     local dir="$HOME/.local/share/applications" file
-    file="$dir/durusql.desktop"
+    file="$dir/durusql-dev.desktop"
     [ -f "$file" ] && grep -q "Exec=\"$ROOT/run.sh\"" "$file" && return
     mkdir -p "$dir"
     cat >"$file" <<DESKTOP
 [Desktop Entry]
 Type=Application
-Name=DuruSQL
-Comment=Lightweight database client
+Name=DuruSQL (dev)
+Comment=Run DuruSQL from the source tree (rebuilds when sources changed)
 Exec="$ROOT/run.sh"
 Path=$ROOT
 Icon=office-database
@@ -145,7 +145,8 @@ StartupWMClass=durusql
 DESKTOP
     chmod +x "$file"
     command -v update-desktop-database >/dev/null && update-desktop-database "$dir" 2>/dev/null || true
-    say "Registered 'DuruSQL' in the app launcher ($file)"
+    rm -f "$dir/durusql.desktop"   # an old dev entry with this id shadowed the packaged app's launcher
+    say "Registered 'DuruSQL (dev)' in the app launcher ($file)"
 }
 
 # ---------------------------------------------------------------- main
