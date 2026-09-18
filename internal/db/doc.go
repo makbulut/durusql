@@ -342,11 +342,15 @@ func (d *docStore) runSQL(ctx context.Context, q string, limit int) (*Result, er
 		// Elasticsearch SQL wants double-quoted identifiers and has no OFFSET: rewrite the
 		// backticks the UI generates and emulate OFFSET by skipping rows, paging with the cursor.
 		q, skip := esSQL(q)
+		if index, n, ok := esSelectAll(q); ok {
+			return d.esSelectAllSearch(ctx, q, index, skip, n, limit)
+		}
 		want := 0
 		if limit > 0 {
 			want = skip + limit + 1
 		}
-		body := map[string]any{"query": q}
+		// arrays would otherwise abort the whole query; lenient mode returns their first value
+		body := map[string]any{"query": q, "field_multi_value_leniency": true}
 		if want > 0 && want < 1000 {
 			body["fetch_size"] = want
 		}
@@ -961,4 +965,73 @@ func esSQL(q string) (string, int) {
 		}
 	}
 	return b.String(), skip
+}
+
+var esSelectAllRe = regexp.MustCompile(`(?is)^\s*SELECT\s+\*\s+FROM\s+("(?:[^"]|"")+"|[^\s;]+)(.*?)(?:\s+LIMIT\s+(\d+))?\s*$`)
+
+// esSelectAll recognises SELECT * FROM index [WHERE …] [ORDER BY …] [LIMIT n] and returns the
+// index and limit (0 = none).
+func esSelectAll(q string) (index string, limit int, ok bool) {
+	m := esSelectAllRe.FindStringSubmatch(q)
+	if m == nil {
+		return "", 0, false
+	}
+	index = m[1]
+	if strings.HasPrefix(index, "\"") {
+		index = strings.ReplaceAll(index[1:len(index)-1], "\"\"", "\"")
+	}
+	if m[3] != "" {
+		limit, _ = strconv.Atoi(m[3])
+	}
+	return index, limit, true
+}
+
+// esSelectAllSearch runs a SELECT * through _sql/translate and a real _search so documents come
+// back whole: Elasticsearch SQL cannot return array fields, a search can. Columns are the union
+// of the flattened _source keys; arrays and objects are shown as JSON.
+func (d *docStore) esSelectAllSearch(ctx context.Context, q, index string, skip, n, limit int) (*Result, error) {
+	var body map[string]any
+	if _, err := d.call(ctx, "POST", "/_sql/translate", map[string]any{"query": q}, &body); err != nil {
+		return nil, err
+	}
+	delete(body, "fields")
+	delete(body, "docvalue_fields")
+	body["_source"] = true
+	body["track_total_hits"] = true // translate sets -1, which drops the total from the response
+	if n > 0 {
+		body["size"] = n - skip // LIMIT was rewritten to n+skip by esSQL
+	}
+	if skip > 0 {
+		body["from"] = skip
+	}
+	raw, err := d.call(ctx, "POST", "/"+url.PathEscape(index)+"/_search", body, nil)
+	if err != nil {
+		return nil, err
+	}
+	var v struct {
+		Hits struct {
+			Total struct {
+				Value json.Number `json:"value"`
+			} `json:"total"`
+			Hits []struct {
+				ID     string         `json:"_id"`
+				Source map[string]any `json:"_source"`
+			} `json:"hits"`
+		} `json:"hits"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.UseNumber()
+	if err := dec.Decode(&v); err != nil {
+		return nil, err
+	}
+	res := &Result{Columns: []string{}, Rows: [][]any{}}
+	rows := make([]map[string]any, 0, len(v.Hits.Hits))
+	for _, h := range v.Hits.Hits {
+		row := map[string]any{"_id": h.ID}
+		flatten("", h.Source, row)
+		rows = append(rows, row)
+	}
+	objectsToRows(res, rows, []string{"_id"}, limit)
+	res.RowsAffected, _ = v.Hits.Total.Value.Int64()
+	return res, nil
 }

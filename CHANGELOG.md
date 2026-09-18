@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.0-beta.3 (2026-09-18)
+
+- Elasticsearch: the index view and any `SELECT *` now run through `_sql/translate` plus a real `_search`, so indices with array or nested fields open instead of failing with "Arrays are not supported"; arrays and objects show as JSON. Other SQL uses multi-value leniency (first value of an array).
+
 ## 0.6.0-beta.2 (2026-09-18)
 
 - OpenSearch / Elasticsearch connections (driver "OpenSearch / Elasticsearch", port 9200, optional HTTPS with a skip-certificate-check switch, SSH tunnel). Indices are listed as tables under the cluster name, mappings as columns (nested fields flattened to dotted paths), aliases as views. The index view pages and filters through the SQL plugin; the console runs SQL statements and Dev Tools style REST requests (`GET /index/_search` followed by a JSON body), one result tab per request; search hits, `_cat` listings and plain objects become grid rows. Elasticsearch (tested on 8.12) is detected automatically: identifiers are rewritten to double quotes and OFFSET paging is emulated through the SQL cursor. Read-only: no grid edits, Modify dialog, dumps or transactions. "Mapping in console" shows settings + mappings as a replayable `PUT`; "Delete all documents…" runs `_delete_by_query`.
