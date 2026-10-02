@@ -31,6 +31,16 @@
     ['columns', 'columns', 'column'], ['keys', 'keys', 'key'], ['foreignKeys', 'foreign keys', 'fk'],
     ['indexes', 'indexes', 'index'], ['triggers', 'triggers', 'trigger'], ['partitions', 'partitions', 'partition'],
   ]
+
+  // last clicked node, for Ctrl+C (name) / Ctrl+Shift+C (qualified name)
+  let pick = null
+  const mark = (key, name, qualified = name) => () => { pick = { key, name, qualified } }
+  function treeKeys(e) {
+    if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'c' || !pick) return
+    if (window.getSelection()?.toString()) return
+    e.preventDefault()
+    navigator.clipboard.writeText(e.shiftKey ? pick.qualified : pick.name)
+  }
 </script>
 
 <aside>
@@ -45,7 +55,7 @@
   </div>
   <div class="filter"><input placeholder="Filter connections, databases, tables…" bind:value={filter} /></div>
 
-  <div class="tree" role="tree">
+  <div class="tree" role="tree" tabindex="-1" on:keydown={treeKeys}>
     {#if !connections.length}
       <p class="muted pad">No connections yet.<br />Add one with <b>+</b> or import them from DataGrip.</p>
     {/if}
@@ -57,6 +67,7 @@
         <div class="node conn" style={pad(0)} class:active={c.id === activeId && !s.activeDb && !s.activeTable} class:connected={s.connected}
              role="treeitem" aria-expanded={!!s.open} tabindex="0"
              on:click={() => dispatch('select', { id: c.id })}
+             on:click={mark('c:' + c.id, c.name)}
              on:dblclick={() => dispatch('toggle', c.id)}
              on:contextmenu={e => menuConn(e, { conn: c })}
              on:keydown={e => { if (e.key === 'Enter') dispatch('toggle', c.id); if (e.key === 'Delete') dispatch('delete', c.id) }}>
@@ -81,7 +92,7 @@
               </div>
               {#if isOpen(s.folders, 'favorites')}
                 {#each s.favorites as t (t)}
-                  <div class="node leaf" style={pad(2)} role="treeitem" class:active={c.id === activeId && s.activeTable === t} on:click={() => dispatch('selectTable', { id: c.id, db: t.split('.')[0], table: t })} on:dblclick={() => dispatch('table', { id: c.id, table: t })} on:contextmenu={e => menuTable(e, { conn: c, table: t })}>
+                  <div class="node leaf" style={pad(2)} role="treeitem" class:active={c.id === activeId && s.activeTable === t} on:click={() => dispatch('selectTable', { id: c.id, db: t.split('.')[0], table: t })} on:click={mark('f:' + c.id + t, t.split('.').slice(1).join('.') || t, t)} on:dblclick={() => dispatch('table', { id: c.id, table: t })} on:contextmenu={e => menuTable(e, { conn: c, table: t })}>
                     <span class="ic">{@html icons.table}</span><span class="name mono">{t}</span>
                   </div>
                 {/each}
@@ -102,6 +113,7 @@
               {@const lvl = pg ? 1 : 0}
               <div class="node db" style={pad(1 + lvl)} class:active={c.id === activeId && s.activeDb === d && !s.activeTable} class:def={d === c.database} role="treeitem" aria-expanded={!!ds.open}
                    on:click={() => dispatch('select', { id: c.id, db: d })}
+                   on:click={mark('d:' + c.id + d, d)}
                    on:dblclick={() => dispatch('toggleDb', { id: c.id, db: d })}
                    on:contextmenu={e => menuDb(e, { conn: c, db: d })}>
                 <button class="chev" class:open={ds.open} on:click|stopPropagation={() => dispatch('toggleDb', { id: c.id, db: d })} tabindex="-1" aria-label="expand">{@html icons.chevron}</button>
@@ -125,6 +137,7 @@
                     {@const td = ds.td?.[t] || {}}
                     <div class="node tbl" style={pad(3 + lvl)} role="treeitem" aria-expanded={!!td.open} class:active={c.id === activeId && s.activeTable === qn}
                          on:click={() => dispatch('selectTable', { id: c.id, db: d, table: qn })}
+                         on:click={mark('t:' + c.id + qn, t, qn)}
                          on:dblclick={() => dispatch('table', { id: c.id, table: qn })}
                          on:contextmenu={e => menuTable(e, { conn: c, table: qn })}>
                       <button class="chev" class:open={td.open} on:click|stopPropagation={() => dispatch('toggleTable', { id: c.id, db: d, table: t })} tabindex="-1" aria-label="expand">{@html icons.chevron}</button>
@@ -142,8 +155,10 @@
                           </div>
                           {#if isOpen(td.folders, key) && (key === 'columns' || key === 'keys' || td.folders?.[key])}
                             {#each items as it (it.name)}
-                              <div class="node leaf detail" style={pad(5 + lvl)} role="treeitem" title={it.definition || it.expression || it.type || ''}
+                              {@const dk = `${kind}:${c.id}${qn}.${it.name}`}
+                              <div class="node leaf detail" style={pad(5 + lvl)} role="treeitem" title={it.definition || it.expression || it.type || ''} class:active={pick?.key === dk}
                                    on:click|stopPropagation={() => dispatch('detail', { id: c.id, kind, item: it, table: qn })}
+                                   on:click={mark(dk, it.name, kind === 'column' ? t + '.' + it.name : it.name)}
                                    on:dblclick|stopPropagation={() => dispatch('modify', { id: c.id, table: qn, kind, item: it })}
                                    on:contextmenu|stopPropagation={e => menuDetail(e, { conn: c, table: qn, kind, item: it })}>
                                 {#if kind === 'column'}
@@ -186,7 +201,7 @@
                   {#if ds.folders?.views}
                     {#each listOf(c, d, ds.views) as v (v)}
                       {@const qn = d + '.' + v}
-                      <div class="node leaf" style={pad(3 + lvl)} role="treeitem" class:active={c.id === activeId && s.activeTable === qn} on:click={() => dispatch('selectTable', { id: c.id, db: d, table: qn })} on:dblclick={() => dispatch('table', { id: c.id, table: qn })} on:contextmenu={e => menuView(e, { conn: c, view: qn })}>
+                      <div class="node leaf" style={pad(3 + lvl)} role="treeitem" class:active={c.id === activeId && s.activeTable === qn} on:click={() => dispatch('selectTable', { id: c.id, db: d, table: qn })} on:click={mark('v:' + c.id + qn, v, qn)} on:dblclick={() => dispatch('table', { id: c.id, table: qn })} on:contextmenu={e => menuView(e, { conn: c, view: qn })}>
                         <span class="ic">{@html icons.view}</span><span class="name mono">{v}</span>
                       </div>
                     {/each}
@@ -201,7 +216,7 @@
                   </div>
                   {#if ds.folders?.routines}
                     {#each listOf(c, d, ds.routines) as r (r.name + r.type)}
-                      <div class="node leaf" style={pad(3 + lvl)} role="treeitem" title="{r.type} · right-click for source" on:contextmenu={e => menuRoutine(e, { conn: c, db: d, routine: r })} on:dblclick={() => dispatch('routine', { id: c.id, db: d, routine: r })}>
+                      <div class="node leaf" style={pad(3 + lvl)} role="treeitem" class:active={pick?.key === 'r:' + c.id + d + r.name} on:click={mark('r:' + c.id + d + r.name, r.name, d + '.' + r.name)} title="{r.type} · right-click for source" on:contextmenu={e => menuRoutine(e, { conn: c, db: d, routine: r })} on:dblclick={() => dispatch('routine', { id: c.id, db: d, routine: r })}>
                         <span class="ic">{@html icons.routine}</span><span class="name mono">{r.name}</span><span class="meta">{r.type.toLowerCase()}</span>
                       </div>
                     {/each}
@@ -216,7 +231,7 @@
                   </div>
                   {#if ds.folders?.sequences}
                     {#each listOf(c, d, ds.sequences) as sq (sq.name)}
-                      <div class="node leaf" style={pad(3 + lvl)} role="treeitem"><span class="ic">{@html icons.seq}</span><span class="name mono">{sq.name}</span><span class="meta mono">{sq.type}</span></div>
+                      <div class="node leaf" style={pad(3 + lvl)} role="treeitem" class:active={pick?.key === 's:' + c.id + d + sq.name} on:click={mark('s:' + c.id + d + sq.name, sq.name, d + '.' + sq.name)}><span class="ic">{@html icons.seq}</span><span class="name mono">{sq.name}</span><span class="meta mono">{sq.type}</span></div>
                     {/each}
                   {/if}
                 {/if}
@@ -248,7 +263,7 @@
                   </div>
                   {#if ds.folders?.events}
                     {#each listOf(c, d, ds.events) as ev (ev)}
-                      <div class="node leaf" style={pad(3 + lvl)} role="treeitem"><span class="ic">{@html icons.event}</span><span class="name mono">{ev}</span></div>
+                      <div class="node leaf" style={pad(3 + lvl)} role="treeitem" class:active={pick?.key === 'e:' + c.id + d + ev} on:click={mark('e:' + c.id + d + ev, ev, d + '.' + ev)}><span class="ic">{@html icons.event}</span><span class="name mono">{ev}</span></div>
                     {/each}
                   {/if}
                 {/if}
@@ -297,7 +312,7 @@
   .tools { display: flex; gap: 2px; }
   .filter { padding: 0 8px 6px; }
   .filter input { padding: 3px 8px; font-size: 12px; }
-  .tree { overflow: auto; flex: 1; padding-bottom: 12px; }
+  .tree { overflow: auto; outline: none; flex: 1; padding-bottom: 12px; }
   .group { padding: 8px 10px 2px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--fg2); }
   .node { display: flex; align-items: center; gap: 4px; height: 23px; padding-right: 8px; cursor: default; user-select: none; white-space: nowrap; }
   .node:hover { background: var(--hover); }

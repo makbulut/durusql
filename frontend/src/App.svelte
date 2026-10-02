@@ -671,7 +671,7 @@
     const labels = { column: 'column', key: 'key', fk: 'foreign key', index: 'index' }
     const items = []
     if (isDoc(conn.id)) {
-      if (!folder && item) items.push({ label: 'Copy name', action: () => navigator.clipboard.writeText(item.name) })
+      if (!folder && item) items.push({ label: 'Copy name', hint: 'Ctrl+C', action: () => navigator.clipboard.writeText(item.name) })
       items.push({ label: 'Mapping in console', action: () => showDDL(conn.id, table) })
       menu = { x, y, items }
       return
@@ -682,7 +682,7 @@
       if (!folder && item) items.push({ sep: true }, { label: `Drop ${labels[kindOf]} ${item.name}…`, danger: true, action: () => dropDetail(conn, table, kindOf, item) })
     }
     items.push({ sep: true }, { label: 'Modify table…', action: () => openTableEditor(conn, db, table) })
-    if (!folder && item) items.push({ label: 'Copy name', action: () => navigator.clipboard.writeText(item.name) })
+    if (!folder && item) items.push({ label: 'Copy name', hint: 'Ctrl+C', action: () => navigator.clipboard.writeText(item.name) })
     menu = { x, y, items }
   }
   async function dropDetail(conn, table, kind, item) {
@@ -772,7 +772,7 @@
       { label: 'SELECT in console', action: () => insertTable({ id: conn.id, table: view }) },
       { label: isDoc(conn.id) ? 'Alias definition in console' : 'DDL in console', action: () => showViewDDL(conn.id, view) },
       { sep: true },
-      { label: 'Copy name', action: () => navigator.clipboard.writeText(view.split('.').pop()) },
+      { label: 'Copy name', hint: 'Ctrl+C', action: () => navigator.clipboard.writeText(view.split('.').pop()) },
       { label: 'Export to CSV…', action: () => exportCSV(conn.id, '', `SELECT * FROM ${ref(conn.id, view)}`, view.split('.').pop()) },
     ]}
   }
@@ -781,7 +781,7 @@
       { label: 'Source in console', action: () => showRoutine({ id: conn.id, db, routine }) },
       { label: routine.type === 'PROCEDURE' ? 'CALL in console' : 'SELECT in console', action: () => newTab(conn.id, { sql: routine.type === 'PROCEDURE' ? `CALL ${routine.name}();` : `SELECT ${routine.name}();`, db }) },
       { sep: true },
-      { label: 'Copy name', action: () => navigator.clipboard.writeText(routine.name) },
+      { label: 'Copy name', hint: 'Ctrl+C', action: () => navigator.clipboard.writeText(routine.name) },
     ]}
   }
 
@@ -813,7 +813,7 @@
       { sep: true },
       { label: 'New query console', hint: 'Ctrl+T', action: () => newTab(conn.id, { db }) },
       ...(isDoc(conn.id) ? [] : [{ label: 'New table…', action: () => openTableEditor(conn, db) }]),
-      { label: 'Copy name', action: () => navigator.clipboard.writeText(db) },
+      { label: 'Copy name', hint: 'Ctrl+C', action: () => navigator.clipboard.writeText(db) },
       ...(isDoc(conn.id) ? [] : [
         { sep: true },
         { label: `Export with ${driverOf(conn.id) === 'postgres' ? 'pg_dump' : 'mysqldump'}…`, action: () => openDump(conn, db) },
@@ -836,7 +836,7 @@
         { label: 'Mapping in console', hint: 'settings + mappings', action: () => showDDL(conn.id, table) },
         { sep: true },
         { label: fav ? 'Remove from favorites' : 'Add to favorites', action: () => toggleFavTable(conn.id, table) },
-        { label: 'Copy name', action: () => navigator.clipboard.writeText(bare) },
+        { label: 'Copy name', hint: 'Ctrl+C', action: () => navigator.clipboard.writeText(bare) },
         { sep: true },
         { label: 'Export to CSV…', action: () => exportCSV(conn.id, '', `SELECT * FROM ${ref(conn.id, table)} LIMIT 10000`, bare) },
         { sep: true },
@@ -856,8 +856,8 @@
       { label: 'Rename table…', action: () => renameTable(conn, table) },
       { sep: true },
       { label: fav ? 'Remove from favorites' : 'Add to favorites', action: () => toggleFavTable(conn.id, table) },
-      { label: 'Copy name', action: () => navigator.clipboard.writeText(bare) },
-      { label: 'Copy qualified name', action: () => navigator.clipboard.writeText(table) },
+      { label: 'Copy name', hint: 'Ctrl+C', action: () => navigator.clipboard.writeText(bare) },
+      { label: 'Copy qualified name', hint: 'Ctrl+Shift+C', action: () => navigator.clipboard.writeText(table) },
       { sep: true },
       { label: 'Export to CSV…', action: () => exportCSV(conn.id, '', `SELECT * FROM ${table}`, bare) },
       { label: `Export with ${pg ? 'pg_dump' : 'mysqldump'}…`, action: () => openDump(conn, db, rest.length ? bare : '') },
