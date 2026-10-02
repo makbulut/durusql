@@ -273,6 +273,44 @@ func (s *Store) ToggleFavorite(id, table string) ([]string, error) {
 	return favs, os.WriteFile(s.favPath(id), b, 0o600)
 }
 
+// ---- favorite groups ----
+
+// FavGroup is a named folder of favorite tables ("db.table"); favorites in no group show ungrouped.
+type FavGroup struct {
+	Name   string   `json:"name"`
+	Tables []string `json:"tables"`
+}
+
+func (s *Store) favGroupsPath(id string) string {
+	return filepath.Join(s.connDir(id), "favgroups.json")
+}
+
+func (s *Store) FavGroups(id string) ([]FavGroup, error) {
+	b, err := os.ReadFile(s.favGroupsPath(id))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []FavGroup{}, nil
+		}
+		return nil, err
+	}
+	var out []FavGroup
+	if err := json.Unmarshal(b, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (s *Store) SaveFavGroups(id string, groups []FavGroup) error {
+	if err := os.MkdirAll(s.connDir(id), 0o700); err != nil {
+		return err
+	}
+	if groups == nil {
+		groups = []FavGroup{}
+	}
+	b, _ := json.MarshalIndent(groups, "", "  ")
+	return os.WriteFile(s.favGroupsPath(id), b, 0o600)
+}
+
 // ---- history (append-only jsonl) ----
 
 type HistoryEntry struct {

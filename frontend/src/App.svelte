@@ -254,8 +254,8 @@
     patch(id, { loading: true, error: '' })
     try {
       await api.connect(id)
-      const [dbNames, favorites, queries] = await Promise.all([api.listDatabases(id), api.getFavorites(id), api.listQueries(id)])
-      patch(id, { connected: true, loading: false, dbNames, dbs: {}, favorites, queries })
+      const [dbNames, favorites, favGroups, queries] = await Promise.all([api.listDatabases(id), api.getFavorites(id), api.getFavGroups(id), api.listQueries(id)])
+      patch(id, { connected: true, loading: false, dbNames, dbs: {}, favorites, favGroups, queries })
       api.getTxState(id).then(tx => patch(id, { tx })).catch(() => {})
       const c = connections.find(x => x.id === id)
       if (c?.driver === 'postgres') api.listDatabaseObjects(id).then(o => patch(id, { dbObjects: o })).catch(() => {})
@@ -266,7 +266,7 @@
   }
   async function disconnect(id) {
     await api.disconnect(id)
-    patch(id, { connected: false, dbNames: [], dbs: {}, favorites: [], queries: [], error: '' })
+    patch(id, { connected: false, dbNames: [], dbs: {}, favorites: [], favGroups: [], queries: [], error: '' })
   }
   function patchDb(id, db, p) {
     const dbs = { ...(state[id]?.dbs || {}) }
@@ -352,13 +352,13 @@
     if (!state[id]?.connected) return connect(id)
     patch(id, { loading: true })
     try {
-      const [dbNames, favorites, queries] = await Promise.all([api.listDatabases(id), api.getFavorites(id), api.listQueries(id)])
+      const [dbNames, favorites, favGroups, queries] = await Promise.all([api.listDatabases(id), api.getFavorites(id), api.getFavGroups(id), api.listQueries(id)])
       const dbs = {}
       for (const d of dbNames) {
         const prev = state[id]?.dbs?.[d]
         dbs[d] = prev?.open ? { open: true, folders: prev.folders, td: {}, ...(await api.listSchemaObjects(id, d)) } : {}
       }
-      patch(id, { loading: false, dbNames, dbs, favorites, queries, error: '' })
+      patch(id, { loading: false, dbNames, dbs, favorites, favGroups, queries, error: '' })
     } catch (e) { patch(id, { loading: false, error: String(e) }) }
   }
   // bind the active console to a connection (and remember the selected database)
@@ -378,7 +378,7 @@
   function toggleFolder({ id, folder }) {
     const f = { ...(state[id]?.folders || {}) }
     // favorites/queries default open (undefined = open); the rest default closed
-    const defOpen = folder === 'favorites' || folder === 'queries'
+    const defOpen = folder === 'favorites' || folder === 'queries' || folder.startsWith('fav:')
     const cur = f[folder] === undefined ? defOpen : f[folder]
     f[folder] = !cur
     patch(id, { folders: f })
@@ -532,6 +532,67 @@
   }
 
   async function toggleFavTable(id, t) { patch(id, { favorites: await api.toggleFavorite(id, t) }) }
+  // ---- favorite groups: named folders of favorite tables, a table is in at most one ----
+  const favGroupOf = (id, t) => (state[id]?.favGroups || []).find(g => g.tables.includes(t))?.name ?? ''
+  async function setFavGroups(id, groups) {
+    patch(id, { favGroups: groups })
+    try { await api.saveFavGroups(id, groups) } catch (e) { note(String(e), true) }
+  }
+  async function newFavGroup(id) {
+    const name = prompt('New favorites group name')?.trim()
+    if (!name) return null
+    const groups = state[id]?.favGroups || []
+    if (!groups.some(g => g.name === name)) await setFavGroups(id, [...groups, { name, tables: [] }])
+    return name
+  }
+  async function moveFav(id, t, group) {
+    const groups = (state[id]?.favGroups || []).map(g => ({ ...g, tables: g.tables.filter(x => x !== t) }))
+    const g = groups.find(g => g.name === group)
+    if (g) g.tables = [...g.tables, t].sort()
+    await setFavGroups(id, groups)
+  }
+  async function addFav(id, t, group) {
+    if (!state[id]?.favorites?.includes(t)) await toggleFavTable(id, t)
+    await moveFav(id, t, group)
+  }
+  async function removeFav(id, t) {
+    if (state[id]?.favorites?.includes(t)) await toggleFavTable(id, t)
+    await moveFav(id, t, '')
+  }
+  // pick the group when adding a favorite (or moving one)
+  function favPicker({ x, y, conn, table }, move) {
+    const id = conn.id, cur = favGroupOf(id, table), groups = state[id]?.favGroups || []
+    const go = g => move ? moveFav(id, table, g) : addFav(id, table, g)
+    const here = g => move && g === cur ? 'current' : ''
+    menu = { x, y, items: [
+      { label: `${move ? 'Move' : 'Add'} ${table} to group…`, disabled: true },
+      { sep: true },
+      ...groups.map(g => ({ label: g.name, hint: here(g.name), action: () => go(g.name) })),
+      { label: 'No group', hint: here(''), action: () => go('') },
+      { sep: true },
+      { label: 'New group…', action: async () => { const g = await newFavGroup(id); if (g) go(g) } },
+    ]}
+  }
+  const favItems = (x, y, conn, table) => state[conn.id]?.favorites?.includes(table) ? [
+    { label: 'Move to favorites group…', action: () => favPicker({ x, y, conn, table }, true) },
+    { label: 'Remove from favorites', action: () => removeFav(conn.id, table) },
+  ] : [{ label: 'Add to favorites…', action: () => favPicker({ x, y, conn, table }, false) }]
+  // right-click on the favorites folder or one of its groups
+  function favMenu({ x, y, conn, group }) {
+    const id = conn.id, groups = () => state[id]?.favGroups || []
+    const items = [{ label: 'New group…', action: () => newFavGroup(id) }]
+    if (group) items.push(
+      { label: 'Rename group…', action: async () => {
+        const name = prompt('Rename favorites group', group)?.trim()
+        if (!name || name === group) return
+        if (groups().some(g => g.name === name)) return note(`A group named "${name}" already exists`, true)
+        await setFavGroups(id, groups().map(g => g.name === group ? { ...g, name } : g))
+      } },
+      { sep: true },
+      { label: 'Delete group', hint: 'tables stay favorites', danger: true, action: () => setFavGroups(id, groups().filter(g => g.name !== group)) },
+    )
+    menu = { x, y, items }
+  }
   // Ctrl+S: save back to the file the tab came from, or ask for a name the first time
   async function saveQuery(saveAs = false) {
     if (!tab?.connId || tab.kind !== 'console') return
@@ -822,7 +883,6 @@
     ]}
   }
   function tableMenu({ x, y, conn, table }) {
-    const fav = state[conn.id]?.favorites?.includes(table)
     const [db, ...rest] = table.split('.')
     const bare = rest.join('.') || table
     const pg = driverOf(conn.id) === 'postgres'
@@ -835,7 +895,7 @@
         { label: 'Count documents', action: () => runIn(newTab(conn.id, { sql: count, db }), count) },
         { label: 'Mapping in console', hint: 'settings + mappings', action: () => showDDL(conn.id, table) },
         { sep: true },
-        { label: fav ? 'Remove from favorites' : 'Add to favorites', action: () => toggleFavTable(conn.id, table) },
+        ...favItems(x, y, conn, table),
         { label: 'Copy name', hint: 'Ctrl+C', action: () => navigator.clipboard.writeText(bare) },
         { sep: true },
         { label: 'Export to CSV…', action: () => exportCSV(conn.id, '', `SELECT * FROM ${ref(conn.id, table)} LIMIT 10000`, bare) },
@@ -855,7 +915,7 @@
       { label: 'Add index…', action: () => openTableEditor(conn, db, table, { kind: 'index', name: '__new__' }) },
       { label: 'Rename table…', action: () => renameTable(conn, table) },
       { sep: true },
-      { label: fav ? 'Remove from favorites' : 'Add to favorites', action: () => toggleFavTable(conn.id, table) },
+      ...favItems(x, y, conn, table),
       { label: 'Copy name', hint: 'Ctrl+C', action: () => navigator.clipboard.writeText(bare) },
       { label: 'Copy qualified name', hint: 'Ctrl+Shift+C', action: () => navigator.clipboard.writeText(table) },
       { sep: true },
@@ -910,6 +970,7 @@
     on:selectTable={e => selectTable(e.detail)}
     on:insertTable={e => insertTable(e.detail)}
     on:menuConn={e => connMenu(e.detail)}
+    on:menuFav={e => favMenu(e.detail)}
     on:menuDb={e => dbMenu(e.detail)}
     on:menuTable={e => tableMenu(e.detail)}
     on:menuView={e => viewMenu(e.detail)}

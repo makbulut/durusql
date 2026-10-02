@@ -24,7 +24,14 @@
   $: listOf = (c, d, items) => (items || []).filter(t => !q || has(c.name) || has(d) || has(typeof t === 'string' ? t : t.name))
 
   const ctx = (name) => (e, detail) => { e.preventDefault(); dispatch(name, { x: e.clientX, y: e.clientY, ...detail }) }
-  const menuConn = ctx('menuConn'), menuDb = ctx('menuDb'), menuTable = ctx('menuTable'), menuQuery = ctx('menuQuery'), menuView = ctx('menuView'), menuRoutine = ctx('menuRoutine'), menuDetail = ctx('menuDetail')
+  const menuFav = ctx('menuFav'), menuConn = ctx('menuConn'), menuDb = ctx('menuDb'), menuTable = ctx('menuTable'), menuQuery = ctx('menuQuery'), menuView = ctx('menuView'), menuRoutine = ctx('menuRoutine'), menuDetail = ctx('menuDetail')
+  // favorite groups (in saved order) followed by the favorites that are in no group
+  const favSections = s => {
+    const favs = s.favorites || [], groups = s.favGroups || []
+    const inGroup = new Set(groups.flatMap(g => g.tables))
+    const loose = favs.filter(t => !inGroup.has(t))
+    return [...groups.map(g => ({ name: g.name, tables: g.tables.filter(t => favs.includes(t)) })), ...(loose.length ? [{ name: '', tables: loose }] : [])]
+  }
   const pad = depth => `padding-left:${depth * 20 + 4}px`
   const isOpen = (folders, name) => folders?.[name] !== false
   const TABLE_FOLDERS = [
@@ -84,17 +91,28 @@
           {#if s.error}
             <div class="node errline mono" style={pad(1)} title={s.error}>{s.error}</div>
           {:else if s.connected}
-            <!-- favorites -->
-            {#if s.favorites?.length}
-              <div class="node folder" style={pad(1)} role="treeitem" on:click={() => dispatch('folder', { id: c.id, folder: 'favorites' })}>
+            <!-- favorites: named groups first, then ungrouped tables -->
+            {#if s.favorites?.length || s.favGroups?.length}
+              <div class="node folder" style={pad(1)} role="treeitem" on:click={() => dispatch('folder', { id: c.id, folder: 'favorites' })} on:contextmenu={e => menuFav(e, { conn: c })}>
                 <span class="chev" class:open={isOpen(s.folders, 'favorites')}>{@html icons.chevron}</span>
-                <span class="ic star">{@html icons.starOn}</span><span class="name">favorites</span><span class="count">{s.favorites.length}</span>
+                <span class="ic star">{@html icons.starOn}</span><span class="name">favorites</span><span class="count">{s.favorites?.length ?? 0}</span>
               </div>
               {#if isOpen(s.folders, 'favorites')}
-                {#each s.favorites as t (t)}
-                  <div class="node leaf" style={pad(2)} role="treeitem" class:active={c.id === activeId && s.activeTable === t} on:click={() => dispatch('selectTable', { id: c.id, db: t.split('.')[0], table: t })} on:click={mark('f:' + c.id + t, t.split('.').slice(1).join('.') || t, t)} on:dblclick={() => dispatch('table', { id: c.id, table: t })} on:contextmenu={e => menuTable(e, { conn: c, table: t })}>
-                    <span class="ic">{@html icons.table}</span><span class="name mono">{t}</span>
-                  </div>
+                {#each favSections(s) as sec (sec.name)}
+                  {@const grouped = sec.name !== ''}
+                  {#if grouped}
+                    <div class="node folder" style={pad(2)} role="treeitem" on:click={() => dispatch('folder', { id: c.id, folder: 'fav:' + sec.name })} on:contextmenu|stopPropagation={e => menuFav(e, { conn: c, group: sec.name })}>
+                      <span class="chev" class:open={isOpen(s.folders, 'fav:' + sec.name)}>{@html icons.chevron}</span>
+                      <span class="ic">{@html icons.folder}</span><span class="name">{sec.name}</span><span class="count">{sec.tables.length}</span>
+                    </div>
+                  {/if}
+                  {#if !grouped || isOpen(s.folders, 'fav:' + sec.name)}
+                    {#each sec.tables as t (t)}
+                      <div class="node leaf" style={pad(grouped ? 3 : 2)} role="treeitem" class:active={c.id === activeId && s.activeTable === t} on:click={() => dispatch('selectTable', { id: c.id, db: t.split('.')[0], table: t })} on:click={mark('f:' + c.id + t, t.split('.').slice(1).join('.') || t, t)} on:dblclick={() => dispatch('table', { id: c.id, table: t })} on:contextmenu={e => menuTable(e, { conn: c, table: t })}>
+                        <span class="ic">{@html icons.table}</span><span class="name mono">{t}</span>
+                      </div>
+                    {/each}
+                  {/if}
                 {/each}
               {/if}
             {/if}

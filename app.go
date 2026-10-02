@@ -1006,3 +1006,7 @@ func (a *App) GetFavorites(id string) ([]string, error)           { return a.sto
 func (a *App) ToggleFavorite(id, table string) ([]string, error) {
 	return a.store.ToggleFavorite(id, table)
 }
+func (a *App) GetFavGroups(id string) ([]config.FavGroup, error) { return a.store.FavGroups(id) }
+func (a *App) SaveFavGroups(id string, groups []config.FavGroup) error {
+	return a.store.SaveFavGroups(id, groups)
+}
