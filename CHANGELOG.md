@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0-beta.4 (2026-10-02)
+
+- Explorer: Ctrl+C copies the selected node's name (connection, database, table, view, column, key, index, routine, …), Ctrl+Shift+C the qualified name (`db.table`, `table.column`); columns and other leaf nodes now highlight when clicked.
+- Favorites can be organised in named groups per connection: "Add to favorites…" asks for the group (or creates a new one), "Move to favorites group…" moves a favorite, and right-clicking a group renames or deletes it (its tables stay favorites).
+- Table view: the WHERE and ORDER BY inputs complete column names (with types) while typing; Ctrl+Space opens the list, ↑/↓ choose, Enter/Tab insert, Esc closes.
+
 ## 0.6.0-beta.3 (2026-09-18)
 
 - Elasticsearch: the index view and any `SELECT *` now run through `_sql/translate` plus a real `_search`, so indices with array or nested fields open instead of failing with "Arrays are not supported"; arrays and objects show as JSON. Other SQL uses multi-value leniency (first value of an array).
