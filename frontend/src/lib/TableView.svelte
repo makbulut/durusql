@@ -3,16 +3,21 @@
   // and the grid's editing actions in a toolbar. The SQL is generated, shown read-only.
   import { createEventDispatcher, tick } from 'svelte'
   import ResultGrid from './ResultGrid.svelte'
+  import ColumnInput from './ColumnInput.svelte'
   import { icons } from './icons.js'
   import { OPS, opLabel, tableSQL, filterSQL } from './filters.js'
   import { highlightSQL } from './highlight.js'
   export let tab            // { table, result, running, applying, error, status, where, orderBy, page, pageSize }
   export let active = true
   export let driver = 'mysql'   // identifier quoting / LIKE casting for column filters
+  export let columns = []       // [{ name, type? }] for WHERE / ORDER BY completion
   const dispatch = createEventDispatcher()
   let grid, changeCount = 0, hasSelection = false
   let where = tab.where || '', orderBy = tab.orderBy || ''
   let showSQL = false
+  const WHERE_KW = ['AND', 'OR', 'NOT', 'NULL', 'IS NULL', 'IS NOT NULL', 'LIKE', 'IN', 'BETWEEN']
+  // explorer metadata (with types) when loaded, else the column names of the current result
+  $: completionCols = columns.length ? columns : (tab.result?.columns || []).map(name => ({ name }))
 
   $: sql = tableSQL(tab, driver)
   $: filters = tab.filters || {}
@@ -107,8 +112,8 @@
     </div>
   {/if}
   <div class="filters">
-    <label class="f"><span class="kw">WHERE</span><input class="mono" placeholder="id > 100 AND status = 'open'" bind:value={where} on:keydown={e => e.key === 'Enter' && apply()} /></label>
-    <label class="f order"><span class="kw">ORDER BY</span><input class="mono" placeholder="updated DESC" bind:value={orderBy} on:keydown={e => e.key === 'Enter' && apply()} /></label>
+    <label class="f"><span class="kw">WHERE</span><ColumnInput placeholder="id > 100 AND status = 'open'" bind:value={where} columns={completionCols} keywords={WHERE_KW} on:enter={apply} /></label>
+    <label class="f order"><span class="kw">ORDER BY</span><ColumnInput placeholder="updated DESC" bind:value={orderBy} columns={completionCols} keywords={['ASC', 'DESC']} on:enter={apply} /></label>
     <button class="ghost small" on:click={apply} disabled={tab.running}>Apply</button>
     {#if where !== (tab.where || '') || orderBy !== (tab.orderBy || '')}<span class="muted small">press Enter</span>{/if}
   </div>
@@ -177,7 +182,6 @@
   .f { display: flex; align-items: center; gap: 6px; flex: 2; margin: 0; }
   .f.order { flex: 1; }
   .kw { font-size: 11px; font-weight: 600; color: var(--fg2); letter-spacing: .03em; white-space: nowrap; }
-  .f input { padding: 2px 8px; font-size: 12px; }
   .sqlline { padding: 3px 12px; font-size: 12px; color: var(--fg2); background: var(--bg); border-bottom: 1px solid var(--line); white-space: pre-wrap; user-select: text; flex: none; }
   .statusbar { padding: 2px 12px; background: var(--bg2); border-bottom: 1px solid var(--line); min-height: 22px; white-space: pre-wrap; font-size: 12px; flex: none; }
   .view > :global(.wrap) { flex: 1; min-height: 0; }

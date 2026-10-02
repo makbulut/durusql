@@ -313,6 +313,11 @@
     }
     return out
   }
+  // columns of a table tab's table, from the explorer metadata (empty until loaded)
+  function tableColumns(st, t) {
+    const [db, ...rest] = (t.table || '').split('.')
+    return (st[t.connId]?.dbs?.[db]?.columns?.[rest.join('.')] || []).map(c => ({ name: c.name, type: c.type }))
+  }
   $: schemaKey = activeId ? schemaVersion(state[activeId]) : ''
   let editorSchema = null
   $: { schemaKey; editorSchema = completionSchema(activeId) }
@@ -491,6 +496,7 @@
   // a table opens in its own data-view tab (reused when already open), like DataGrip
   function openTable({ id, table }) {
     patch(id, { activeTable: table, activeDb: table.split('.')[0] })
+    loadColumns(id, table.split('.')[0])   // WHERE / ORDER BY completion
     const t = tabs.find(x => x.kind === 'table' && x.connId === id && x.table === table)
     if (t) { activeTab = t.id; tableChange(t, { page: t.page || 0 }) }
     else { const nt = newTab(id, { kind: 'table', table, where: '', orderBy: '', filters: {}, page: 0, pageSize: 500 }); tableChange(nt, { page: 0 }) }
@@ -1061,7 +1067,7 @@
     {#each tabs as t (t.id)}
       <div class="pane" class:hidden={t.id !== activeTab}>
         {#if t.kind === 'table'}
-          <TableView tab={t} active={t.id === activeTab} driver={driverOf(t.connId)}
+          <TableView tab={t} active={t.id === activeTab} driver={driverOf(t.connId)} columns={tableColumns(state, t)}
             on:change={e => tableChange(t, e.detail)}
             on:submit={e => applyChanges(t, e.detail)}
             on:console={e => newTab(t.connId, { sql: e.detail })}
