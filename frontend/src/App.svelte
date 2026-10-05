@@ -994,6 +994,7 @@
         {#each tabs as t (t.id)}
           <div class="tab" data-tab={t.id} class:on={t.id === activeTab} class:table={t.kind === 'table'} role="tab" aria-selected={t.id === activeTab}
                on:mousedown={e => { if (e.button === 1) { e.preventDefault(); closeTab(t.id) } else if (e.button === 0) activeTab = t.id }}
+    on:favDrop={e => addFav(e.detail.id, e.detail.table, e.detail.group)}
                on:dblclick={() => renameTab(t.id)} on:contextmenu={e => tabMenu(e, t)} title={(t.kind === 'table' ? t.table : (t.sql || '').split('\n')[0]) + (t.connId ? ` [${connName(t.connId)}]` : '')}>
             <span class="ic">{@html t.kind === 'table' ? icons.table : icons.query}</span>
             <span class="title">{short(tabTitle(t))}{#if dirty(t)}<span class="dirty" title="Unsaved changes (Ctrl+S)">●</span>{/if}</span>

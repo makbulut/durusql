@@ -32,6 +32,18 @@
     const loose = favs.filter(t => !inGroup.has(t))
     return [...groups.map(g => ({ name: g.name, tables: g.tables.filter(t => favs.includes(t)) })), ...(loose.length ? [{ name: '', tables: loose }] : [])]
   }
+  // drag a table (favorite or from the tables list) onto a favorites group, the favorites folder (no group)
+  // or a favorite in a group; drops only land in the same connection
+  let drag = null, dropKey = null
+  const dragStart = (connId, table) => e => { drag = { connId, table }; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', table) }
+  const dragEnd = () => { drag = null; dropKey = null }
+  const dropZone = (connId, group) => ({
+    over: e => { if (drag?.connId !== connId) return; e.preventDefault(); e.dataTransfer.dropEffect = 'move'; dropKey = connId + '|' + group },
+    leave: () => { if (dropKey === connId + '|' + group) dropKey = null },
+    drop: e => { if (drag?.connId !== connId) return; e.preventDefault(); e.stopPropagation(); dispatch('favDrop', { id: connId, table: drag.table, group }); dragEnd() },
+  })
+  // favorites show the bare table name; the database only as a hint when they span several
+  const favDbs = s => new Set((s.favorites || []).map(t => t.split('.')[0])).size
   const pad = depth => `padding-left:${depth * 20 + 4}px`
   const isOpen = (folders, name) => folders?.[name] !== false
   const TABLE_FOLDERS = [
@@ -93,23 +105,28 @@
           {:else if s.connected}
             <!-- favorites: named groups first, then ungrouped tables -->
             {#if s.favorites?.length || s.favGroups?.length}
-              <div class="node folder" style={pad(1)} role="treeitem" on:click={() => dispatch('folder', { id: c.id, folder: 'favorites' })} on:contextmenu={e => menuFav(e, { conn: c })}>
+              {@const zf = dropZone(c.id, '')}
+              <div class="node folder" style={pad(1)} role="treeitem" class:drop={dropKey === c.id + '|'} on:click={() => dispatch('folder', { id: c.id, folder: 'favorites' })} on:contextmenu={e => menuFav(e, { conn: c })}
+                   on:dragover={zf.over} on:dragleave={zf.leave} on:drop={zf.drop}>
                 <span class="chev" class:open={isOpen(s.folders, 'favorites')}>{@html icons.chevron}</span>
                 <span class="ic star">{@html icons.starOn}</span><span class="name">favorites</span><span class="count">{s.favorites?.length ?? 0}</span>
               </div>
               {#if isOpen(s.folders, 'favorites')}
                 {#each favSections(s) as sec (sec.name)}
                   {@const grouped = sec.name !== ''}
+                  {@const z = dropZone(c.id, sec.name)}
                   {#if grouped}
-                    <div class="node folder" style={pad(2)} role="treeitem" on:click={() => dispatch('folder', { id: c.id, folder: 'fav:' + sec.name })} on:contextmenu|stopPropagation={e => menuFav(e, { conn: c, group: sec.name })}>
+                    <div class="node folder" style={pad(2)} role="treeitem" class:drop={dropKey === c.id + '|' + sec.name} on:dragover={z.over} on:dragleave={z.leave} on:drop={z.drop} on:click={() => dispatch('folder', { id: c.id, folder: 'fav:' + sec.name })} on:contextmenu|stopPropagation={e => menuFav(e, { conn: c, group: sec.name })}>
                       <span class="chev" class:open={isOpen(s.folders, 'fav:' + sec.name)}>{@html icons.chevron}</span>
                       <span class="ic">{@html icons.folder}</span><span class="name">{sec.name}</span><span class="count">{sec.tables.length}</span>
                     </div>
                   {/if}
                   {#if !grouped || isOpen(s.folders, 'fav:' + sec.name)}
                     {#each sec.tables as t (t)}
-                      <div class="node leaf" style={pad(grouped ? 3 : 2)} role="treeitem" class:active={c.id === activeId && s.activeTable === t} on:click={() => dispatch('selectTable', { id: c.id, db: t.split('.')[0], table: t })} on:click={mark('f:' + c.id + t, t.split('.').slice(1).join('.') || t, t)} on:dblclick={() => dispatch('table', { id: c.id, table: t })} on:contextmenu={e => menuTable(e, { conn: c, table: t })}>
-                        <span class="ic">{@html icons.table}</span><span class="name mono">{t}</span>
+                      <div class="node leaf" style={pad(grouped ? 3 : 2)} role="treeitem" title={t} draggable="true" on:dragstart={dragStart(c.id, t)} on:dragend={dragEnd}
+                           on:dragover={z.over} on:dragleave={z.leave} on:drop={z.drop} class:dragging={drag?.table === t && drag?.connId === c.id} class:active={c.id === activeId && s.activeTable === t} on:click={() => dispatch('selectTable', { id: c.id, db: t.split('.')[0], table: t })} on:click={mark('f:' + c.id + t, t.split('.').slice(1).join('.') || t, t)} on:dblclick={() => dispatch('table', { id: c.id, table: t })} on:contextmenu={e => menuTable(e, { conn: c, table: t })}>
+                        <span class="ic">{@html icons.table}</span><span class="name mono">{t.split('.').slice(1).join('.') || t}</span>
+                        {#if favDbs(s) > 1}<span class="meta">{t.split('.')[0]}</span>{/if}
                       </div>
                     {/each}
                   {/if}
@@ -153,7 +170,7 @@
                   {#each listOf(c, d, ds.tables) as t (t)}
                     {@const qn = d + '.' + t}
                     {@const td = ds.td?.[t] || {}}
-                    <div class="node tbl" style={pad(3 + lvl)} role="treeitem" aria-expanded={!!td.open} class:active={c.id === activeId && s.activeTable === qn}
+                    <div class="node tbl" style={pad(3 + lvl)} role="treeitem" aria-expanded={!!td.open} draggable="true" on:dragstart={dragStart(c.id, qn)} on:dragend={dragEnd} class:active={c.id === activeId && s.activeTable === qn}
                          on:click={() => dispatch('selectTable', { id: c.id, db: d, table: qn })}
                          on:click={mark('t:' + c.id + qn, t, qn)}
                          on:dblclick={() => dispatch('table', { id: c.id, table: qn })}
@@ -219,7 +236,7 @@
                   {#if ds.folders?.views}
                     {#each listOf(c, d, ds.views) as v (v)}
                       {@const qn = d + '.' + v}
-                      <div class="node leaf" style={pad(3 + lvl)} role="treeitem" class:active={c.id === activeId && s.activeTable === qn} on:click={() => dispatch('selectTable', { id: c.id, db: d, table: qn })} on:click={mark('v:' + c.id + qn, v, qn)} on:dblclick={() => dispatch('table', { id: c.id, table: qn })} on:contextmenu={e => menuView(e, { conn: c, view: qn })}>
+                      <div class="node leaf" style={pad(3 + lvl)} role="treeitem" draggable="true" on:dragstart={dragStart(c.id, qn)} on:dragend={dragEnd} class:active={c.id === activeId && s.activeTable === qn} on:click={() => dispatch('selectTable', { id: c.id, db: d, table: qn })} on:click={mark('v:' + c.id + qn, v, qn)} on:dblclick={() => dispatch('table', { id: c.id, table: qn })} on:contextmenu={e => menuView(e, { conn: c, view: qn })}>
                         <span class="ic">{@html icons.view}</span><span class="name mono">{v}</span>
                       </div>
                     {/each}
@@ -335,6 +352,8 @@
   .node { display: flex; align-items: center; gap: 4px; height: 23px; padding-right: 8px; cursor: default; user-select: none; white-space: nowrap; }
   .node:hover { background: var(--hover); }
   .node.active { background: var(--sel); }
+  .node.drop { background: var(--sel); outline: 1px dashed var(--accent, #7aa2f7); outline-offset: -1px; }
+  .node.dragging { opacity: .5; }
   .leaf { padding-left: 20px; }
   .chev { display: inline-flex; width: 16px; height: 16px; align-items: center; justify-content: center; color: var(--fg2); background: none; border: 0; padding: 0; transition: transform .12s; flex: none; }
   .chev.open { transform: rotate(90deg); }
