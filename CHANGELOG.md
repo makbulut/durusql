@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0-beta.5 (2026-10-05)
+
+- Console: right-click shows "Run selection" when text is selected (only the selection runs), otherwise "Run statement" / "Run subquery" for the cursor position, plus Run all, Cut, Copy, Paste and Select all.
+- Ctrl+Enter now runs the statement at the cursor (DataGrip style) instead of the whole console; inside a parenthesised subquery a "Statements" chooser offers the subquery, the enclosing statements and the whole script, highlighting each candidate. Ctrl+Shift+Enter runs everything. The Run button runs the selection when there is one.
+- Favorites: drag tables between groups, onto the favorites folder (no group), or from the tables / views list into a group to add them. Favorites show the bare table name; the database is shown only when favorites span several databases.
+
 ## 0.6.0-beta.4 (2026-10-02)
 
 - Explorer: Ctrl+C copies the selected node's name (connection, database, table, view, column, key, index, routine, …), Ctrl+Shift+C the qualified name (`db.table`, `table.column`); columns and other leaf nodes now highlight when clicked.
