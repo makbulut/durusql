@@ -450,6 +450,23 @@
     if (logMode === 'history' && historyFor === t.connId) loadHistory(true)
   }
   const run = text => tab && runIn(tab, text)
+  let editors = {}   // console tab id → Editor (selection / run at cursor)
+  // right-click in a console editor
+  function editorMenu({ x, y, selection, runSelection, targets, runAll, cut, copy, paste, selectAll }) {
+    const kindLabel = { subquery: 'Run subquery', statement: 'Run statement', script: 'Run all' }
+    const busy = !activeId || tab?.running
+    menu = { x, y, items: [
+      ...(selection
+        ? [{ label: 'Run selection', hint: 'Ctrl+Enter', action: runSelection, disabled: busy }]
+        : targets.filter(c => c.kind !== 'script').map(c => ({ label: `${kindLabel[c.kind]}: ${c.label}`, hint: c.kind === 'statement' && targets.length < 3 ? 'Ctrl+Enter' : '', action: c.run, disabled: busy }))),
+      { label: 'Run all', hint: 'Ctrl+Shift+Enter', action: runAll, disabled: busy },
+      { sep: true },
+      { label: 'Cut', hint: 'Ctrl+X', action: cut, disabled: !selection },
+      { label: 'Copy', hint: 'Ctrl+C', action: copy, disabled: !selection },
+      { label: 'Paste', hint: 'Ctrl+V', action: paste },
+      { label: 'Select all', hint: 'Ctrl+A', action: selectAll },
+    ]}
+  }
   function cancelRun() { if (tab?.runId) api.cancelQuery(tab.runId) }
   function selectResult(t, i) { upd(t.id, { resultIdx: i, result: t.results[i], status: statusOf(t.results[i]) }) }
 
@@ -977,6 +994,7 @@
     on:insertTable={e => insertTable(e.detail)}
     on:menuConn={e => connMenu(e.detail)}
     on:menuFav={e => favMenu(e.detail)}
+    on:favDrop={e => addFav(e.detail.id, e.detail.table, e.detail.group)}
     on:menuDb={e => dbMenu(e.detail)}
     on:menuTable={e => tableMenu(e.detail)}
     on:menuView={e => viewMenu(e.detail)}
@@ -994,7 +1012,6 @@
         {#each tabs as t (t.id)}
           <div class="tab" data-tab={t.id} class:on={t.id === activeTab} class:table={t.kind === 'table'} role="tab" aria-selected={t.id === activeTab}
                on:mousedown={e => { if (e.button === 1) { e.preventDefault(); closeTab(t.id) } else if (e.button === 0) activeTab = t.id }}
-    on:favDrop={e => addFav(e.detail.id, e.detail.table, e.detail.group)}
                on:dblclick={() => renameTab(t.id)} on:contextmenu={e => tabMenu(e, t)} title={(t.kind === 'table' ? t.table : (t.sql || '').split('\n')[0]) + (t.connId ? ` [${connName(t.connId)}]` : '')}>
             <span class="ic">{@html t.kind === 'table' ? icons.table : icons.query}</span>
             <span class="title">{short(tabTitle(t))}{#if dirty(t)}<span class="dirty" title="Unsaved changes (Ctrl+S)">●</span>{/if}</span>
@@ -1038,7 +1055,7 @@
       {#if tab?.running && tab?.runId}
         <button class="icon stop" on:click={cancelRun} title="Cancel the running statement">{@html icons.stop}</button>
       {:else}
-        <button class="icon run" disabled={!activeId || tab?.running} on:click={() => run()} title="Run (Ctrl+Enter) — runs the selection when there is one; several statements run one after another">{@html icons.play}</button>
+        <button class="icon run" disabled={!activeId || tab?.running} on:click={() => run(editors[tab?.id]?.selectionText() || undefined)} title="Run: the selection when there is one, otherwise the whole console (Ctrl+Shift+Enter). Ctrl+Enter runs the statement at the cursor">{@html icons.play}</button>
       {/if}
       <button class="icon" disabled={!activeId} on:click={() => { logMode = 'history'; logOpen = true; loadHistory(true) }} title="Query history of this connection">{@html icons.event}</button>
       <button class="icon" class:dirty-btn={tab && dirty(tab)} disabled={!activeId || !tab?.sql?.trim()} on:click={() => saveQuery(false)} title={tab?.queryName ? `Save to ${tab.queryName}.sql (Ctrl+S) · Ctrl+Shift+S saves as…` : 'Save as… (Ctrl+S)'}>{@html icons.save}</button>
@@ -1074,11 +1091,11 @@
             on:console={e => newTab(t.connId, { sql: e.detail })}
             on:exportMenu={e => exportMenu(e.detail, t)} />
         {:else}
-        <div class="editorwrap"><Editor bind:value={t.sql} active={t.id === activeTab}
+        <div class="editorwrap"><Editor bind:this={editors[t.id]} bind:value={t.sql} active={t.id === activeTab}
           schema={t.id === activeTab ? editorSchema : null}
           defaultSchema={t.id === activeTab ? (t.db || connections.find(c => c.id === t.connId)?.database || '') : ''}
           dialect={driverOf(t.connId)}
-          on:run={e => runIn(t, e.detail)} /></div>
+          on:run={e => runIn(t, e.detail)} on:menu={e => editorMenu(e.detail)} /></div>
         <div class="split h" use:splitter={{ axis: 'y', invert: true, get: () => resultsH, set: v => resultsH = clamp(v, 80, innerHeight - 260), done: () => persist('durusql.resultsH', resultsH) }}></div>
         <div class="results" style="height:{resultsH}px">
           {#if (t.results || []).length > 1}

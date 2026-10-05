@@ -36,7 +36,7 @@
   button:hover:not(:disabled) { background: var(--sel); }
   button:disabled { color: var(--fg2); cursor: default; }
   button.danger:hover:not(:disabled) { background: #5a2a2a; color: #ffb3b3; }
-  .lbl { flex: 1; }
+  .lbl { flex: 1; max-width: 480px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hint { color: var(--fg2); font-size: 11px; }
   .sep { height: 1px; background: var(--line); margin: 4px 6px; }
 </style>
