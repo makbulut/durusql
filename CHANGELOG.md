@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.0-beta.7 (2026-11-26)
+
+- Saved queries (Files panel) autosave: changes are written to the .sql file a second after typing stops, and right away when the tab is closed (also Close all / Close others) or the app quits; closing such a tab no longer asks about unsaved changes. Ctrl+S still saves immediately.
+
 ## 0.6.0-beta.6 (2026-11-26)
 
 - Console: DataGrip-style run status next to the line numbers: a spinner on the statement that is running, a green tick when it finished, a red error icon when it failed or was cancelled. Scripts report each statement as it runs, so long scripts show their progress live.
