@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0-beta.6 (2026-11-26)
+
+- Console: DataGrip-style run status next to the line numbers: a spinner on the statement that is running, a green tick when it finished, a red error icon when it failed or was cancelled. Scripts report each statement as it runs, so long scripts show their progress live.
+- Output panel: statements appear as soon as they start (with a spinner and "running…"), then get their row count and time; coloured status icons in Output and History.
+- Window: maximise / fullscreen now fills a larger second monitor (the size limit was taken from the monitor the window first opened on, seen on Ubuntu 26.04 / GNOME 50).
+
 ## 0.6.0-beta.5 (2026-10-05)
 
 - Console: right-click shows "Run selection" when text is selected (only the selection runs), otherwise "Run statement" / "Run subquery" for the cursor position, plus Run all, Cut, Copy, Paste and Select all.
