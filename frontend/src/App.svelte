@@ -137,14 +137,15 @@
     const i = tabs.findIndex(t => t.id === id)
     if (i < 0) return
     const t = tabs[i]
-    const unsaved = t.kind === 'console' && (t.queryName ? dirty(t) : !!t.sql?.trim())
+    if (t.queryName) await autosave(t)   // saved files keep their changes, no question
+    const unsaved = t.kind === 'console' && !t.queryName && !!t.sql?.trim()
     if (unsaved && !(await ask(t.queryName ? `"${tabTitle(t)}" has unsaved changes. Close it anyway?` : `Close "${tabTitle(t)}"? Its SQL is not saved.`,
         { title: 'Close tab', ok: 'Close', key: 'closeTab' }))) return
     tabs = tabs.filter(x => x.id !== id)
     if (activeTab === id) activeTab = (tabs[i] || tabs[i - 1] || tabs[0])?.id || null
     if (!tabs.length) newTab(t.connId)
   }
-  function closeOthers(id) { tabs = tabs.filter(t => t.id === id); activeTab = id }
+  function closeOthers(id) { tabs.filter(t => t.id !== id && dirty(t)).forEach(autosave); tabs = tabs.filter(t => t.id === id); activeTab = id }
   function renameTab(id) {
     const t = tabs.find(x => x.id === id)
     const name = prompt('Tab name', t.title || tabTitle(t))
@@ -154,6 +155,23 @@
   const tabTitle = t => t.title || (t.kind === 'table' ? t.table.split('.').pop() : 'console')
   // DataGrip-style middle truncation for long table names
   const dirty = t => !!t.queryName && (t.sql || '') !== (t.savedSql || '')
+  // saved .sql files autosave: a second after typing stops, and right away when the tab closes or the app quits
+  const autosaveTimers = {}
+  async function autosave(t) {
+    clearTimeout(autosaveTimers[t.id]); delete autosaveTimers[t.id]
+    if (t.kind !== 'console' || !dirty(t) || !t.connId) return
+    const sql = t.sql || ''
+    try {
+      await api.saveQuery(t.connId, t.queryName, sql)
+      const cur = tabs.find(x => x.id === t.id)
+      if (cur && cur.queryName === t.queryName) upd(t.id, { savedSql: sql })
+    } catch (e) { note(`Autosave of ${t.queryName}.sql failed: ${e}`, true) }
+  }
+  $: if (!restoring) for (const t of tabs) if (t.kind === 'console' && dirty(t)) {
+    clearTimeout(autosaveTimers[t.id])
+    autosaveTimers[t.id] = setTimeout(() => { const cur = tabs.find(x => x.id === t.id); if (cur) autosave(cur) }, 1000)
+  }
+  async function quit() { await Promise.all(tabs.filter(dirty).map(autosave)); Quit() }
   async function setTabDb(db) {
     if (!tab) return
     upd(tab.id, { db })
@@ -195,7 +213,7 @@
       { sep: true },
       { label: 'Close', hint: 'Ctrl+W', action: () => closeTab(t.id) },
       { label: 'Close others', action: () => closeOthers(t.id), disabled: tabs.length < 2 },
-      { label: 'Close all', action: async () => { if (tabs.some(x => x.kind === 'console' && (x.queryName ? dirty(x) : !!x.sql?.trim())) && !(await ask('Some consoles have unsaved SQL. Close all tabs anyway?', { title: 'Close all tabs', ok: 'Close all', key: 'closeAll' }))) return; tabs = []; newTab(t.connId) } },
+      { label: 'Close all', action: async () => { await Promise.all(tabs.filter(dirty).map(autosave)); if (tabs.some(x => x.kind === 'console' && !x.queryName && !!x.sql?.trim()) && !(await ask('Some consoles have unsaved SQL. Close all tabs anyway?', { title: 'Close all tabs', ok: 'Close all', key: 'closeAll' }))) return; tabs = []; newTab(t.connId) } },
     ]}
   }
 
@@ -999,7 +1017,7 @@
     <span class="winbtns" style="--wails-draggable: no-drag">
       <button class="wb" title="Minimise" on:click={() => WindowMinimise()}>&#x2013;</button>
       <button class="wb" title={maximised ? 'Restore' : 'Maximise'} on:click={toggleMax}>{maximised ? '❐' : '☐'}</button>
-      <button class="wb close" title="Close" on:click={() => Quit()}>✕</button>
+      <button class="wb close" title="Close" on:click={quit}>✕</button>
     </span>
   </div>
   <Explorer {connections} {state} {activeId}
