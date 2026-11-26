@@ -1,8 +1,9 @@
 <script>
   import { onMount, onDestroy, createEventDispatcher } from 'svelte'
   import { EditorView, basicSetup } from 'codemirror'
-  import { keymap, Decoration } from '@codemirror/view'
-  import { Prec, Compartment, StateField, StateEffect } from '@codemirror/state'
+  import { keymap, Decoration, gutter, GutterMarker } from '@codemirror/view'
+  import { Prec, Compartment, StateField, StateEffect, RangeSet } from '@codemirror/state'
+  import { status } from './icons.js'
   import { statements, statementAt, subqueriesAt } from './sqlsplit.js'
   import { sql as sqlLang, MySQL, PostgreSQL, MariaSQL } from '@codemirror/lang-sql'
   import { oneDark } from '@codemirror/theme-one-dark'
@@ -26,11 +27,57 @@
     },
     provide: f => EditorView.decorations.from(f),
   })
+  // run-status gutter: spinner / tick / error next to the line number of each executed statement
+  class StatusMarker extends GutterMarker {
+    constructor(kind) { super(); this.kind = kind }
+    eq(o) { return o.kind === this.kind }
+    toDOM() { const s = document.createElement('span'); s.className = 'cm-runst ' + this.kind; s.innerHTML = status[this.kind]; return s }
+  }
+  const markers = { run: new StatusMarker('run'), ok: new StatusMarker('ok'), err: new StatusMarker('err') }
+  const setSt = StateEffect.define()   // { pos, kind } or null = clear all
+  const stField = StateField.define({
+    create: () => RangeSet.empty,
+    update(set, tr) {
+      set = set.map(tr.changes)
+      for (const e of tr.effects) if (e.is(setSt)) {
+        if (!e.value) { set = RangeSet.empty; continue }
+        const { pos, kind } = e.value
+        const at = tr.state.doc.lineAt(Math.min(pos, tr.state.doc.length)).from
+        set = set.update({ filter: from => from !== at, add: [markers[kind].range(at)] })
+      }
+      return set
+    },
+  })
+  const stGutter = gutter({ class: 'cm-runGutter', markers: v => v.state.field(stField) })
+
+  // statements of the last run: the backend reports them by index and text; find each in the run range
+  let runFrom = 0, runTo = 0, runCursor = 0, stepPos = []
+  const isBlankOrComment = l => /^\s*($|--|#|\/\*.*\*\/\s*$)/.test(l)
+  function locate(sql) {
+    const text = view.state.sliceDoc(runFrom, runTo), q = sql.trim()
+    let i = q ? text.indexOf(q, runCursor) : -1
+    if (i < 0) { const s = statements(text.slice(runCursor), dialect)[0]; if (!s) return -1; i = runCursor + s.from; runCursor = runCursor + s.to; return runFrom + i }
+    runCursor = i + q.length
+    // skip leading comment lines (the backend keeps them with the statement)
+    let p = i
+    for (const l of q.split('\n')) { if (!isBlankOrComment(l)) break; p += l.length + 1 }
+    return runFrom + Math.min(p, i + q.length)
+  }
+  // called by the parent for each step of a run: { idx, sql?, kind: 'run'|'ok'|'err' }
+  export function markStep(idx, kind, sql) {
+    if (!view) return
+    if (stepPos[idx] === undefined) { if (sql == null) return; stepPos[idx] = locate(sql) }
+    if (stepPos[idx] < 0) return
+    view.dispatch({ effects: setSt.of({ pos: stepPos[idx], kind }) })
+  }
+  function beginRun(range) { runFrom = range.from; runTo = range.to; runCursor = 0; stepPos = []; view.dispatch({ effects: setSt.of(null) }) }
+
   let flashTimer
   const highlight = range => { clearTimeout(flashTimer); view?.dispatch({ effects: setHl.of(range && range.to > range.from ? range : null) }) }
   function runRange(range) {
     if (!range) return
     highlight(range)
+    beginRun(range)
     flashTimer = setTimeout(() => highlight(null), 500)
     dispatch('run', view.state.sliceDoc(range.from, range.to))
   }
@@ -121,6 +168,8 @@
           { key: 'Ctrl-Shift-Enter', mac: 'Cmd-Shift-Enter', run: () => { runAll(); return true } },
         ])),
         hlField,
+        stField,
+        stGutter,
         EditorView.domEventHandlers({ contextmenu: e => { contextMenu(e); return true } }),
         EditorView.updateListener.of(u => { if (u.docChanged) value = u.state.doc.toString() }),
         EditorView.theme({ '&': { height: '100%', fontSize: '13px' }, '.cm-scroller': { fontFamily: 'var(--mono)' } })
@@ -159,6 +208,10 @@
   .editor { min-height: 160px; overflow: hidden; }
   .editor :global(.cm-editor) { height: 100%; }
   .editor :global(.cm-tooltip-autocomplete) { font-family: var(--mono); font-size: 12px; }
+  .editor :global(.cm-runGutter) { width: 18px; }
+  .editor :global(.cm-runGutter .cm-gutterElement) { display: flex; align-items: center; justify-content: center; }
+  .editor :global(.cm-runst) { display: inline-flex; }
+  .editor :global(.cm-runst .spin) { animation: spin 1s linear infinite; transform-origin: 50% 50%; }
   .editor :global(.cm-runhl) { background: rgba(122, 162, 247, .22); }
   .chooser { position: fixed; z-index: 1000; min-width: 260px; max-width: 520px; padding: 4px; background: var(--bg3); border: 1px solid var(--line); box-shadow: 0 8px 24px rgba(0,0,0,.45); }
   .ch-title { text-align: center; font-weight: 600; font-size: 12px; padding: 4px 0 6px; }

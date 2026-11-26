@@ -293,10 +293,12 @@ func (d *docStore) runScript(ctx context.Context, script string, limit int) ([]*
 	reqs := splitDocScript(script)
 	var out []*Result
 	for _, r := range reqs {
+		stepStart(ctx, len(out), r.Text)
 		res, err := d.runRequest(ctx, r, limit)
 		if err != nil {
 			return out, &StatementError{Index: len(out), SQL: r.Text, Err: err}
 		}
+		stepDone(ctx, len(out), res)
 		out = append(out, res)
 	}
 	return out, nil

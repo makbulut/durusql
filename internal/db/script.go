@@ -237,6 +237,7 @@ func (c *Conn) RunScript(ctx context.Context, sess *Session, schema, script stri
 	}
 	var out []*Result
 	for _, q := range stmts {
+		stepStart(ctx, len(out), q)
 		r, err := c.runOne(ctx, ex, q, limit)
 		if err != nil {
 			return out, &StatementError{Index: len(out), SQL: q, Err: err}
@@ -244,9 +245,36 @@ func (c *Conn) RunScript(ctx context.Context, sess *Session, schema, script stri
 		if sess.Open() {
 			sess.Count++
 		}
+		stepDone(ctx, len(out), r)
 		out = append(out, r)
 	}
 	return out, nil
+}
+
+// Progress receives per-statement callbacks while a script runs: Start before a statement is
+// executed, Done after it succeeded. A failing statement gets no Done (RunScript returns the error).
+type Progress struct {
+	Start func(idx int, sql string)
+	Done  func(idx int, r *Result)
+}
+
+type progressKey struct{}
+
+// WithProgress attaches p to ctx so RunScript reports each statement as it goes.
+func WithProgress(ctx context.Context, p *Progress) context.Context {
+	return context.WithValue(ctx, progressKey{}, p)
+}
+
+func stepStart(ctx context.Context, idx int, sql string) {
+	if p, _ := ctx.Value(progressKey{}).(*Progress); p != nil && p.Start != nil {
+		p.Start(idx, sql)
+	}
+}
+
+func stepDone(ctx context.Context, idx int, r *Result) {
+	if p, _ := ctx.Value(progressKey{}).(*Progress); p != nil && p.Done != nil {
+		p.Done(idx, r)
+	}
 }
 
 // StatementError says which statement of a script failed.

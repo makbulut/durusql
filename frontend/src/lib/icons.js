@@ -1,5 +1,12 @@
 // Tiny inline SVG icons (16px grid) so the tree reads like an IDE explorer.
 const svg = (d, extra = '') => `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" ${extra}>${d}</svg>`
+// coloured run-status icons (editor gutter + Output panel), DataGrip-like
+const stat = (d, extra = '') => `<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" ${extra}>${d}</svg>`
+export const status = {
+  ok:  stat('<path d="M3 8.5l3.2 3.2L13 4.8" stroke="#5fb865"/>'),
+  err: stat('<circle cx="8" cy="8" r="6.3" fill="#e5534b" stroke="none"/><path d="M5.6 5.6l4.8 4.8M10.4 5.6l-4.8 4.8" stroke="#fff" stroke-width="1.8"/>'),
+  run: stat('<circle cx="8" cy="8" r="5.5" stroke="#3574f0" stroke-opacity=".25"/><path d="M8 2.5a5.5 5.5 0 0 1 5.5 5.5" stroke="#6c9bff"/>', 'class="spin"'),
+}
 export const icons = {
   db:      svg('<ellipse cx="8" cy="4" rx="5.5" ry="2.2"/><path d="M2.5 4v8c0 1.2 2.5 2.2 5.5 2.2s5.5-1 5.5-2.2V4"/><path d="M2.5 8c0 1.2 2.5 2.2 5.5 2.2s5.5-1 5.5-2.2"/>'),
   table:   svg('<rect x="2" y="3" width="12" height="10" rx="1.2"/><path d="M2 6.5h12M6 3v10M10 3v10"/>'),

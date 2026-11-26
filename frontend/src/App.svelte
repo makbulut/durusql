@@ -19,7 +19,7 @@
   import { icons } from './lib/icons.js'
   import { splitter, clamp, remember, persist } from './lib/splitter.js'
   import * as api from './lib/api.js'
-  import { WindowMinimise, WindowToggleMaximise, Quit, WindowIsMaximised } from './wailsjs/runtime/runtime.js'
+  import { WindowMinimise, WindowToggleMaximise, Quit, WindowIsMaximised, EventsOn } from './wailsjs/runtime/runtime.js'
 
   // one-time migration of browser storage written under the old product name
   try {
@@ -390,7 +390,19 @@
   }
 
   // ---- queries ----
-  function addLog(e) { log = [...log.slice(-499), { at: new Date(), ...e }] }
+  let logSeq = 0
+  function addLog(e) { const x = { id: ++logSeq, at: new Date(), ...e }; log = [...log.slice(-499), x]; return x.id }
+  function updLog(id, p) { log = log.map(x => x.id === id ? { ...x, ...p } : x) }
+
+  // live per-statement progress of console runs: runId → { idx → log entry id }
+  const runSteps = {}
+  EventsOn('script:step', ev => {
+    const steps = runSteps[ev.runId]
+    if (!steps) return
+    const ed = editors[steps.tab]
+    if (ev.done) { if (steps[ev.idx]) updLog(steps[ev.idx], { running: false, ms: ev.ms, rows: ev.rows }); ed?.markStep(ev.idx, 'ok') }
+    else { steps[ev.idx] = addLog({ conn: steps.conn, sql: ev.sql, running: true }); ed?.markStep(ev.idx, 'run', ev.sql) }
+  })
 
   const statusOf = r => r.columns.length
     ? `${r.rows.length}${r.truncated ? '+' : ''} rows · ${r.ms} ms`
@@ -405,13 +417,14 @@
     if (!state[t.connId]?.connected) { upd(t.id, { error: state[t.connId]?.error || 'not connected' }); return }
     upd(t.id, { running: true, error: '' })
     const name = connName(t.connId)
+    const lid = addLog({ conn: name, sql: q, running: true })
     try {
       const result = await api.runQuery(t.connId, q, limit, '')
       upd(t.id, { result, lastRun: { sql: q, limit }, status: statusOf(result), running: false })
-      addLog({ conn: name, sql: q, ms: result.ms, rows: result.columns.length ? result.rows.length : result.rowsAffected })
+      updLog(lid, { running: false, ms: result.ms, rows: result.columns.length ? result.rows.length : result.rowsAffected })
     } catch (e) {
       upd(t.id, { error: String(e), result: null, running: false })
-      addLog({ conn: name, sql: q, err: String(e) })
+      updLog(lid, { running: false, err: String(e) })
     }
     if (logMode === 'history' && historyFor === t.connId) loadHistory(true)
   }
@@ -425,11 +438,21 @@
     upd(t.id, { running: true, error: '', runId: t.id + ':' + Date.now() })
     const runId = tabs.find(x => x.id === t.id)?.runId
     const name = connName(t.connId)
+    const steps = runSteps[runId] = { conn: name, tab: t.id }
     try {
       const r = await api.runScript(t.connId, t.db || '', q, limit, runId)
       const results = r.results || []
-      for (const res of results) addLog({ conn: name, sql: res.sql, ms: res.ms, rows: res.columns.length ? res.rows.length : res.rowsAffected })
-      if (r.error) addLog({ conn: name, sql: r.errorSql || q, err: r.error })
+      // statements already shown live get their final numbers; anything missed is appended
+      results.forEach((res, i) => {
+        const p = { conn: name, sql: res.sql, running: false, ms: res.ms, rows: res.columns.length ? res.rows.length : res.rowsAffected }
+        steps[i] ? updLog(steps[i], p) : addLog(p)
+        editors[t.id]?.markStep(i, 'ok', res.sql)
+      })
+      if (r.error) {
+        const p = { conn: name, sql: r.errorSql || q, running: false, err: r.error }
+        r.errorIdx >= 0 && steps[r.errorIdx] ? updLog(steps[r.errorIdx], p) : addLog(p)
+        if (r.errorIdx >= 0) editors[t.id]?.markStep(r.errorIdx, 'err', r.errorSql)
+      }
       const withRows = results.map((res, i) => i).filter(i => results[i].columns.length)
       const idx = withRows.length ? withRows[withRows.length - 1] : Math.max(results.length - 1, 0)
       const last = results[idx]
@@ -447,6 +470,9 @@
       upd(t.id, { error: String(e), results: [], result: null, running: false, runId: null })
       addLog({ conn: name, sql: q, err: String(e) })
     }
+    // nothing of this run may keep spinning (cancelled / failed before its step event arrived)
+    for (const k in steps) if (/^\d+$/.test(k)) { const x = log.find(e => e.id === steps[k]); if (x?.running) { updLog(x.id, { running: false, err: 'cancelled' }); editors[t.id]?.markStep(+k, 'err') } }
+    delete runSteps[runId]
     if (logMode === 'history' && historyFor === t.connId) loadHistory(true)
   }
   const run = text => tab && runIn(tab, text)

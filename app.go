@@ -438,6 +438,21 @@ func (a *App) RunScript(id, schema, script string, limit int, runID string) (*Sc
 	}
 	a.mu.Unlock()
 
+	// live progress for the Output panel (spinner on the running statement, tick when done)
+	if runID != "" {
+		ctx = db.WithProgress(ctx, &db.Progress{
+			Start: func(i int, sql string) {
+				runtime.EventsEmit(a.ctx, "script:step", map[string]any{"runId": runID, "idx": i, "sql": sql})
+			},
+			Done: func(i int, r *db.Result) {
+				rows := int64(len(r.Rows))
+				if len(r.Columns) == 0 {
+					rows = r.RowsAffected
+				}
+				runtime.EventsEmit(a.ctx, "script:step", map[string]any{"runId": runID, "idx": i, "done": true, "ms": r.Ms, "rows": rows})
+			},
+		})
+	}
 	results, err := c.RunScript(ctx, sess, schema, script, limit)
 	out := &ScriptResult{Results: results, ErrorIdx: -1}
 	cfg, _ := a.store.Get(id)

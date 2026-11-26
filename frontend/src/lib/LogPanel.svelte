@@ -1,6 +1,6 @@
 <script>
   import { createEventDispatcher } from 'svelte'
-  import { icons } from './icons.js'
+  import { icons, status } from './icons.js'
   import { highlightSQL } from './highlight.js'
   export let log = []          // session output, newest last: { at: Date, conn, sql, ms, rows, err }
   export let open = true
@@ -37,12 +37,12 @@
   <div class="rows mono" bind:this={el}>
     {#if !log.length}<p class="muted pad">Executed statements, timings and errors show up here.</p>{/if}
     {#each log as e}
-      <div class="row" class:bad={e.err} on:dblclick={() => dispatch('load', e.sql)} title="Double-click to load into editor">
+      <div class="row" class:bad={e.err} class:run={e.running} on:dblclick={() => dispatch('load', e.sql)} title="Double-click to load into editor">
         <span class="ts">{t(e.at)}</span>
-        <span class="st">{@html e.err ? icons.err : icons.ok}</span>
+        <span class="st">{@html e.running ? status.run : e.err ? status.err : status.ok}</span>
         <span class="cn">{e.conn}&gt;</span>
         <span class="sql">{@html highlightSQL(one(e.sql))}</span>
-        <span class="meta">{e.err ? e.err : `${e.rows ?? 0} rows · ${e.ms} ms`}</span>
+        <span class="meta">{e.running ? 'running…' : e.err ? e.err : `${e.rows ?? 0} rows · ${e.ms} ms`}</span>
       </div>
     {/each}
   </div>
@@ -54,7 +54,7 @@
       {#if i === 0 || day(h.at) !== day(shown[i - 1].at)}<div class="day">{day(h.at)}</div>{/if}
       <div class="row" class:bad={h.err} on:dblclick={() => dispatch('load', h.sql)} on:contextmenu={e => ctx(e, h)} title={h.sql.length > 200 ? h.sql.slice(0, 200) + '…' : h.sql}>
         <span class="ts">{t(h.at)}</span>
-        <span class="st">{@html h.err ? icons.err : icons.ok}</span>
+        <span class="st">{@html h.err ? status.err : status.ok}</span>
         <span class="sql">{@html highlightSQL(one(h.sql))}</span>
         <span class="meta">{h.err ? h.err : `${h.rows ?? 0} rows · ${h.ms} ms`}</span>
       </div>
@@ -77,8 +77,9 @@
   .row:hover { background: var(--hover); }
   .day { padding: 4px 10px 1px; color: var(--fg2); font-size: 11px; font-family: var(--font); }
   .ts { color: var(--fg2); }
-  .st { display: inline-flex; color: var(--ok); }
-  .bad .st { color: var(--err); }
+  .st { display: inline-flex; width: 15px; justify-content: center; }
+  .run .meta { color: var(--acc2); }
+  .run { background: var(--hover); }
   .cn { color: var(--acc); }
   .sql { flex: 1; overflow: hidden; text-overflow: ellipsis; }
   .meta { color: var(--fg2); }
