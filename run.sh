@@ -11,7 +11,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
-export PATH="$HOME/go/bin:/snap/bin:$PATH"
+export PATH="/opt/go/bin:/snap/bin:$PATH"
 
 WAILS_VERSION="v2.16.0"
 BIN="$ROOT/build/bin/durusql"

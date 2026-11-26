@@ -16,7 +16,7 @@ NOTES=$(awk -v v="$VERSION" '/^## /{ if (found) exit; if (index($0, v)) { found=
 UPDATE_SOURCE="${DURUSQL_UPDATE_SOURCE:-$(cat UPDATE_SOURCE 2>/dev/null || true)}"   # e.g. https://github.com/makbulut/durusql
 LD="-X main.version=$VERSION -X main.updateSource=$UPDATE_SOURCE"
 ARCH="$(dpkg --print-architecture 2>/dev/null || uname -m)"
-export PATH="$HOME/go/bin:$PATH"
+export PATH="/opt/go/bin:$PATH"
 rm -rf dist; mkdir -p dist
 
 if [ "$(uname)" = "Darwin" ]; then
