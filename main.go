@@ -37,6 +37,11 @@ func main() {
 		Height:           900,
 		MinWidth:         900,
 		MinHeight:        600,
+		// Explicit max size: with 0 Wails pins the GTK max-size hint to the monitor the window is
+		// first realised on, so on a multi-monitor setup (laptop 1920×1080 + 2560×1440) the window
+		// can never maximise beyond the smaller screen (seen on Ubuntu 26.04 / GNOME 50 Wayland).
+		MaxWidth:  16384,
+		MaxHeight: 16384,
 		Frameless:        true, // the app draws its own title bar (DataGrip-like), see App.svelte
 		BackgroundColour: &options.RGBA{R: 0x1e, G: 0x1f, B: 0x22, A: 0xff},
 		AssetServer:      &assetserver.Options{Assets: assets},
