@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0-beta.8 (2026-11-27)
+
+- Stop (■, now also Ctrl+F2 as in DataGrip) really stops a running statement: it is killed on the server (MySQL/MariaDB `KILL QUERY`, PostgreSQL `pg_cancel_backend`) instead of only abandoning the connection, which let MySQL run e.g. a long DELETE to the end. The connection and an open manual transaction stay usable.
+- Fix: in manual transaction mode the transaction was rolled back as soon as the run that opened it finished, so its changes were lost and later statements failed.
+- Explorer: select several tables with Ctrl+click / Shift+click; right-click the selection for SELECT / Count rows / DDL in console, Refresh, Analyze, Optimize, Check, Repair (PostgreSQL: Analyze, Vacuum, Vacuum analyze), Add to favorites, Copy names, Truncate and Drop (confirmed by typing the number of tables; runs in a console with progress and Stop).
+- ANALYZE / OPTIMIZE / CHECK / REPAIR / CHECKSUM TABLE results (one status row per table) are now shown instead of discarded.
+- Tables: "Refresh" in the table menu (and "Refresh table" on columns, keys, indexes …) reloads columns, keys, indexes, partitions; after DDL run in a console expanded tables stay expanded and show the change.
+- Favorites: "Go to table in tree" expands the database, selects the table in its tables list and scrolls to it.
+
 ## 0.6.0-beta.7 (2026-11-26)
 
 - Saved queries (Files panel) autosave: changes are written to the .sql file a second after typing stops, and right away when the tab is closed (also Close all / Close others) or the app quits; closing such a tab no longer asks about unsaved changes. Ctrl+S still saves immediately.
