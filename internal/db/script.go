@@ -137,7 +137,9 @@ func (c *Conn) Begin(ctx context.Context, schema string) (*Session, error) {
 		cn.Close()
 		return nil, err
 	}
-	tx, err := cn.BeginTx(ctx, nil)
+	// database/sql rolls a transaction back when its context ends: the session must outlive the
+	// run that opened it (it lasts until Commit / Rollback)
+	tx, err := cn.BeginTx(context.WithoutCancel(ctx), nil)
 	if err != nil {
 		cn.Close()
 		return nil, err
@@ -235,10 +237,18 @@ func (c *Conn) RunScript(ctx context.Context, sess *Session, schema, script stri
 		}
 		ex = cn
 	}
+	bid := c.backendID(ctx, ex) // lets Stop kill the running statement on the server
 	var out []*Result
 	for _, q := range stmts {
+		if err := ctx.Err(); err != nil {
+			return out, &StatementError{Index: len(out), SQL: q, Err: fmt.Errorf("cancelled: %w", err)}
+		}
 		stepStart(ctx, len(out), q)
-		r, err := c.runOne(ctx, ex, q, limit)
+		var r *Result
+		err := c.interruptible(ctx, bid, func(qctx context.Context) (err error) {
+			r, err = c.runOne(qctx, ex, q, limit)
+			return err
+		})
 		if err != nil {
 			return out, &StatementError{Index: len(out), SQL: q, Err: err}
 		}
