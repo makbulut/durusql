@@ -302,7 +302,12 @@
   async function loadDb(id, db) {
     try {
       const o = await api.listSchemaObjects(id, db)
-      patchDb(id, db, { ...o, loading: false, folders: state[id]?.dbs?.[db]?.folders || { tables: true }, td: {} })
+      // tables that were expanded stay expanded and get fresh details; everything else is dropped
+      const prev = state[id]?.dbs?.[db]?.td || {}, td = {}
+      const keep = Object.keys(prev).filter(t => prev[t].open && (o.tables || []).includes(t))
+      for (const t of keep) td[t] = { open: true, folders: prev[t].folders, details: prev[t].details, loading: true }
+      patchDb(id, db, { ...o, loading: false, folders: state[id]?.dbs?.[db]?.folders || { tables: true }, td })
+      for (const t of keep) refreshTable(id, db + '.' + t)
       loadColumns(id, db)
     } catch (e) { patchDb(id, db, { loading: false, error: String(e) }) }
   }
@@ -356,6 +361,13 @@
     if (td.details) return
     try { patchTable(id, db, table, { details: await api.tableDetails(id, db + '.' + table), loading: false }) }
     catch (e) { patchTable(id, db, table, { loading: false, error: String(e) }) }
+  }
+  // reload a table's columns / keys / indexes / partitions … (keeps it expanded or collapsed as it is)
+  async function refreshTable(id, table) {
+    const db = table.split('.')[0], bare = table.split('.').slice(1).join('.')
+    patchTable(id, db, bare, { loading: true, error: '' })
+    try { patchTable(id, db, bare, { details: await api.tableDetails(id, table), loading: false }) }
+    catch (e) { patchTable(id, db, bare, { loading: false, error: String(e) }) }
   }
   function toggleTableFolder({ id, db, table, folder }) {
     const f = { ...(state[id]?.dbs?.[db]?.td?.[table]?.folders || {}) }
@@ -810,6 +822,7 @@
       if (!folder && item) items.push({ sep: true }, { label: `Drop ${labels[kindOf]} ${item.name}…`, danger: true, action: () => dropDetail(conn, table, kindOf, item) })
     }
     items.push({ sep: true }, { label: 'Modify table…', action: () => openTableEditor(conn, db, table) })
+    items.push({ label: 'Refresh table', action: () => refreshTable(conn.id, table) })
     if (!folder && item) items.push({ label: 'Copy name', hint: 'Ctrl+C', action: () => navigator.clipboard.writeText(item.name) })
     menu = { x, y, items }
   }
@@ -840,7 +853,7 @@
     if (state[id]?.dbs?.[db]) {
       const wasOpen = !!state[id]?.dbs?.[db]?.td?.[bare]?.open || !!state[id]?.dbs?.[db]?.td?.[prevTable?.split('.').pop()]?.open
       patchDb(id, db, { loading: true }); await loadDb(id, db)
-      if (wasOpen) toggleTable({ id, db, table: bare })
+      if (wasOpen && !state[id]?.dbs?.[db]?.td?.[bare]?.open) toggleTable({ id, db, table: bare })   // renamed: open the new name
     }
     for (const t of tabs) if (t.kind === 'table' && t.connId === id && (t.table === table || t.table === prevTable)) tableChange(t, { table })
   }
@@ -949,13 +962,25 @@
       ]),
     ]}
   }
-  function tableMenu({ x, y, conn, table }) {
+  // favorites → the table in its database's tables list: expand the way there, select it, scroll to it
+  async function revealTable(id, table) {
+    const db = table.split('.')[0]
+    if (!state[id]?.open) patch(id, { open: true })
+    if (!state[id]?.dbs?.[db]?.tables) { patchDb(id, db, { open: true, loading: true }); await loadDb(id, db) } else patchDb(id, db, { open: true })
+    patchDb(id, db, { folders: { ...(state[id]?.dbs?.[db]?.folders || {}), tables: true } })
+    selectTable({ id, db, table })
+    await tick()
+    const el = document.querySelector(`[data-node="${CSS.escape('t:' + id + ':' + table)}"]`)
+    if (el) { el.scrollIntoView({ block: 'center' }); el.animate?.([{ outline: '1px solid var(--acc2)' }, { outline: '1px solid transparent' }], { duration: 1200 }) }
+  }
+  function tableMenu({ x, y, conn, table, fromFav }) {
     const [db, ...rest] = table.split('.')
     const bare = rest.join('.') || table
     const pg = driverOf(conn.id) === 'postgres'
     if (isDoc(conn.id)) {
       const count = `SELECT COUNT(*) FROM ${ref(conn.id, table)}`
       menu = { x, y, items: [
+        ...(fromFav ? [{ label: 'Go to index in tree', action: () => revealTable(conn.id, table) }, { sep: true }] : []),
         { label: 'Open index', hint: 'dbl-click', action: () => openTable({ id: conn.id, table }) },
         { label: 'SELECT in console', action: () => insertTable({ id: conn.id, table }) },
         { label: 'Search in console', action: () => newTab(conn.id, { sql: `GET /${bare}/_search\n{\n  "size": 100,\n  "query": { "match_all": {} }\n}`, db }) },
@@ -972,10 +997,12 @@
       return
     }
     menu = { x, y, items: [
+      ...(fromFav ? [{ label: 'Go to table in tree', action: () => revealTable(conn.id, table) }, { sep: true }] : []),
       { label: 'Open table', hint: 'dbl-click', action: () => openTable({ id: conn.id, table }) },
       { label: 'SELECT in console', action: () => insertTable({ id: conn.id, table }) },
       { label: 'Count rows', action: () => runIn(newTab(conn.id, { sql: `SELECT COUNT(*) FROM ${table}`, db }), `SELECT COUNT(*) FROM ${table}`) },
       { label: 'DDL in console', action: () => showDDL(conn.id, table) },
+      { label: 'Refresh', hint: 'columns, keys, indexes, partitions…', action: () => refreshTable(conn.id, table) },
       { sep: true },
       { label: 'Modify table…', action: () => openTableEditor(conn, db, table) },
       { label: 'Add column…', action: () => openTableEditor(conn, db, table, { kind: 'column', name: '__new__' }) },
@@ -993,9 +1020,60 @@
       { label: 'Drop table…', danger: true, action: () => dropTable(conn, table) },
     ]}
   }
+  // right-click on a multi-selection of tables (Ctrl/Shift+click in the explorer)
+  function tablesMenu({ x, y, conn, db, tables, clear }) {
+    const pg = driverOf(conn.id) === 'postgres', n = tables.length
+    const qid = t => t.split('.').map(p => pg ? '"' + p.replaceAll('"', '""') + '"' : '`' + p.replaceAll('`', '``') + '`').join('.')
+    const list = tables.map(qid)
+    // maintenance runs in a new console so per-table status rows, progress and Stop are all there
+    const inConsole = (sql, title) => runIn(newTab(conn.id, { sql, db, title }), sql)
+    const listText = tables.slice(0, 15).map(t => '  ' + t.split('.').pop()).join('\n') + (n > 15 ? `\n  … and ${n - 15} more` : '')
+    async function destructive(verb) {
+      const typed = prompt(`${verb} ${n} tables on ${conn.name}:\n\n${listText}\n\nThis cannot be undone. Type ${n} to confirm:`)
+      if (typed === null) return
+      if (typed.trim() !== String(n)) { note('Number did not match, nothing done'); return }
+      const sql = tables.map(t => `${verb} TABLE ${qid(t)};`).join('\n')
+      clear()
+      await inConsole(sql, `${verb.toLowerCase()} ${n} tables`)
+      if (verb === 'DROP') {
+        tabs = tabs.filter(t => !(t.kind === 'table' && t.connId === conn.id && tables.includes(t.table)))
+        if (!tabs.find(t => t.id === activeTab)) activeTab = tabs[0]?.id || null
+      } else for (const t of tabs) if (t.kind === 'table' && t.connId === conn.id && tables.includes(t.table)) tableChange(t, { page: 0 })
+      patchDb(conn.id, db, { loading: true }); await loadDb(conn.id, db)
+    }
+    menu = { x, y, items: [
+      { label: `${n} tables selected`, disabled: true },
+      { sep: true },
+      { label: 'SELECT in console', action: () => newTab(conn.id, { db, sql: tables.map(t => `SELECT * FROM ${qid(t)};`).join('\n') }) },
+      { label: 'Count rows', action: () => inConsole(tables.map(t => `SELECT '${t.split('.').pop().replaceAll("'", "''")}' AS ${pg ? 'table_name' : '`table`'}, COUNT(*) AS ${pg ? 'count' : '`count`'} FROM ${qid(t)}`).join('\nUNION ALL\n'), `count ${n} tables`) },
+      { label: 'Refresh', action: () => tables.forEach(t => refreshTable(conn.id, t)) },
+      { label: 'DDL in console', action: async () => {
+        try { const ddl = await Promise.all(tables.map(t => api.tableDDLAny(conn.id, t))); newTab(conn.id, { db, title: `${n} tables DDL`, sql: ddl.map(d => d.trim().replace(/;?$/, ';')).join('\n\n') }) }
+        catch (e) { note(String(e), true) } } },
+      { sep: true },
+      ...(pg ? [
+        { label: 'Analyze', action: () => inConsole(tables.map(t => `ANALYZE ${qid(t)};`).join('\n'), `analyze ${n} tables`) },
+        { label: 'Vacuum', action: () => inConsole(tables.map(t => `VACUUM ${qid(t)};`).join('\n'), `vacuum ${n} tables`) },
+        { label: 'Vacuum analyze', action: () => inConsole(tables.map(t => `VACUUM ANALYZE ${qid(t)};`).join('\n'), `vacuum ${n} tables`) },
+      ] : [
+        { label: 'Analyze', action: () => inConsole(`ANALYZE TABLE ${list.join(', ')}`, `analyze ${n} tables`) },
+        { label: 'Optimize', action: () => inConsole(`OPTIMIZE TABLE ${list.join(', ')}`, `optimize ${n} tables`) },
+        { label: 'Check', action: () => inConsole(`CHECK TABLE ${list.join(', ')}`, `check ${n} tables`) },
+        { label: 'Repair', action: () => inConsole(`REPAIR TABLE ${list.join(', ')}`, `repair ${n} tables`) },
+      ]),
+      { sep: true },
+      ...tables.every(t => state[conn.id]?.favorites?.includes(t)) ? [] : [{ label: 'Add to favorites', action: async () => { for (const t of tables) if (!state[conn.id]?.favorites?.includes(t)) await toggleFavTable(conn.id, t) } }],
+      { label: 'Copy names', action: () => navigator.clipboard.writeText(tables.map(t => t.split('.').pop()).join('\n')) },
+      { label: 'Copy qualified names', action: () => navigator.clipboard.writeText(tables.join('\n')) },
+      { sep: true },
+      { label: `Truncate ${n} tables…`, danger: true, action: () => destructive('TRUNCATE') },
+      { label: `Drop ${n} tables…`, danger: true, action: () => destructive('DROP') },
+    ]}
+  }
   function globalKeys(e) {
     if (e.key === 'Escape' && tabList) { tabList = false; return }
     if (!e.ctrlKey || e.altKey) return
+    if (e.key === 'F2') { e.preventDefault(); cancelRun(); return }   // Ctrl+F2: stop, as in DataGrip
     if (e.shiftKey && (e.key === 'f' || e.key === 'F')) { e.preventDefault(); searchDlg = true }
     else if (e.key === 'k' || e.key === 'K' || e.key === 'p' || e.key === 'P') { e.preventDefault(); searchDlg = true }
     else if (e.key === 's' || e.key === 'S') { e.preventDefault(); saveQuery(e.shiftKey) }
@@ -1041,6 +1119,7 @@
     on:favDrop={e => addFav(e.detail.id, e.detail.table, e.detail.group)}
     on:menuDb={e => dbMenu(e.detail)}
     on:menuTable={e => tableMenu(e.detail)}
+    on:menuTables={e => tablesMenu(e.detail)}
     on:menuView={e => viewMenu(e.detail)}
     on:menuRoutine={e => routineMenu(e.detail)}
     on:routine={e => showRoutine(e.detail)}
@@ -1097,7 +1176,7 @@
     {#if tab?.kind !== 'table'}
     <header>
       {#if tab?.running && tab?.runId}
-        <button class="icon stop" on:click={cancelRun} title="Cancel the running statement">{@html icons.stop}</button>
+        <button class="icon stop" on:click={cancelRun} title="Stop the running statement (Ctrl+F2)">{@html icons.stop}</button>
       {:else}
         <button class="icon run" disabled={!activeId || tab?.running} on:click={() => run(editors[tab?.id]?.selectionText() || undefined)} title="Run: the selection when there is one, otherwise the whole console (Ctrl+Shift+Enter). Ctrl+Enter runs the statement at the cursor">{@html icons.play}</button>
       {/if}

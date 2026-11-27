@@ -24,6 +24,29 @@
   $: listOf = (c, d, items) => (items || []).filter(t => !q || has(c.name) || has(d) || has(typeof t === 'string' ? t : t.name))
 
   const ctx = (name) => (e, detail) => { e.preventDefault(); dispatch(name, { x: e.clientX, y: e.clientY, ...detail }) }
+  // multi-selection of tables within one database: Ctrl+click toggles, Shift+click selects a range
+  let multi = { key: '', tables: [], anchor: null }   // key = connId|db
+  function clickTable(e, c, d, t, list) {
+    const qn = d + '.' + t, key = c.id + '|' + d
+    const active = state[c.id]?.activeTable
+    if (e.ctrlKey || e.metaKey) {
+      let tables = multi.key === key ? multi.tables : (active?.startsWith(d + '.') ? [active] : [])
+      tables = tables.includes(qn) ? tables.filter(x => x !== qn) : [...tables, qn]
+      multi = { key, tables, anchor: qn }
+    } else if (e.shiftKey) {
+      const anchor = (multi.key === key && multi.anchor) || (active?.startsWith(d + '.') ? active : qn)
+      const names = list.map(x => d + '.' + x)
+      let a = names.indexOf(anchor), b = names.indexOf(qn)
+      if (a < 0) a = b
+      if (a > b) [a, b] = [b, a]
+      multi = { key, tables: names.slice(a, b + 1), anchor }
+    } else multi = { key: '', tables: [], anchor: qn }
+  }
+  const inMulti = (c, d, qn, _m = multi) => multi.key === c.id + '|' + d && multi.tables.includes(qn)
+  function tableContext(e, c, d, qn) {
+    if (inMulti(c, d, qn) && multi.tables.length > 1) { e.preventDefault(); dispatch('menuTables', { x: e.clientX, y: e.clientY, conn: c, db: d, tables: multi.tables, clear: () => multi = { key: '', tables: [], anchor: null } }) }
+    else { multi = { key: '', tables: [], anchor: qn }; menuTable(e, { conn: c, table: qn }) }
+  }
   const menuFav = ctx('menuFav'), menuConn = ctx('menuConn'), menuDb = ctx('menuDb'), menuTable = ctx('menuTable'), menuQuery = ctx('menuQuery'), menuView = ctx('menuView'), menuRoutine = ctx('menuRoutine'), menuDetail = ctx('menuDetail')
   // favorite groups (in saved order) followed by the favorites that are in no group
   const favSections = s => {
@@ -55,6 +78,7 @@
   let pick = null
   const mark = (key, name, qualified = name) => () => { pick = { key, name, qualified } }
   function treeKeys(e) {
+    if (e.key === 'Escape' && multi.tables.length) { multi = { key: '', tables: [], anchor: null }; return }
     if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'c' || !pick) return
     if (window.getSelection()?.toString()) return
     e.preventDefault()
@@ -124,7 +148,7 @@
                   {#if !grouped || isOpen(s.folders, 'fav:' + sec.name)}
                     {#each sec.tables as t (t)}
                       <div class="node leaf" style={pad(grouped ? 3 : 2)} role="treeitem" title={t} draggable="true" on:dragstart={dragStart(c.id, t)} on:dragend={dragEnd}
-                           on:dragover={z.over} on:dragleave={z.leave} on:drop={z.drop} class:dragging={drag?.table === t && drag?.connId === c.id} class:active={c.id === activeId && s.activeTable === t} on:click={() => dispatch('selectTable', { id: c.id, db: t.split('.')[0], table: t })} on:click={mark('f:' + c.id + t, t.split('.').slice(1).join('.') || t, t)} on:dblclick={() => dispatch('table', { id: c.id, table: t })} on:contextmenu={e => menuTable(e, { conn: c, table: t })}>
+                           on:dragover={z.over} on:dragleave={z.leave} on:drop={z.drop} class:dragging={drag?.table === t && drag?.connId === c.id} class:active={c.id === activeId && s.activeTable === t} on:click={() => dispatch('selectTable', { id: c.id, db: t.split('.')[0], table: t })} on:click={mark('f:' + c.id + t, t.split('.').slice(1).join('.') || t, t)} on:dblclick={() => dispatch('table', { id: c.id, table: t })} on:contextmenu={e => menuTable(e, { conn: c, table: t, fromFav: true })}>
                         <span class="ic">{@html icons.table}</span><span class="name mono">{t.split('.').slice(1).join('.') || t}</span>
                         {#if favDbs(s) > 1}<span class="meta">{t.split('.')[0]}</span>{/if}
                       </div>
@@ -170,11 +194,13 @@
                   {#each listOf(c, d, ds.tables) as t (t)}
                     {@const qn = d + '.' + t}
                     {@const td = ds.td?.[t] || {}}
-                    <div class="node tbl" style={pad(3 + lvl)} role="treeitem" aria-expanded={!!td.open} draggable="true" on:dragstart={dragStart(c.id, qn)} on:dragend={dragEnd} class:active={c.id === activeId && s.activeTable === qn}
+                    <div class="node tbl" style={pad(3 + lvl)} role="treeitem" data-node={'t:' + c.id + ':' + qn} aria-expanded={!!td.open} draggable="true" on:dragstart={dragStart(c.id, qn)} on:dragend={dragEnd} class:active={multi.key === c.id + '|' + d ? inMulti(c, d, qn, multi) : (c.id === activeId && s.activeTable === qn)}
+                         on:mousedown={e => { if (e.shiftKey) e.preventDefault() }}
+                         on:click={e => clickTable(e, c, d, t, listOf(c, d, ds.tables))}
                          on:click={() => dispatch('selectTable', { id: c.id, db: d, table: qn })}
                          on:click={mark('t:' + c.id + qn, t, qn)}
                          on:dblclick={() => dispatch('table', { id: c.id, table: qn })}
-                         on:contextmenu={e => menuTable(e, { conn: c, table: qn })}>
+                         on:contextmenu={e => tableContext(e, c, d, qn)}>
                       <button class="chev" class:open={td.open} on:click|stopPropagation={() => dispatch('toggleTable', { id: c.id, db: d, table: t })} tabindex="-1" aria-label="expand">{@html icons.chevron}</button>
                       <span class="ic">{@html td.loading ? icons.spinner : icons.table}</span><span class="name mono">{t}</span>
                       {#if s.favorites?.includes(qn)}<span class="fav">{@html icons.starOn}</span>{/if}

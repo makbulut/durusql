@@ -173,7 +173,10 @@ func (c *Conn) Close() {
 
 func (c *Conn) isPG() bool { return c.Cfg.Driver == "postgres" || c.Cfg.Driver == "postgresql" }
 
-var readPrefixes = []string{"SELECT", "SHOW", "WITH", "EXPLAIN", "DESCRIBE", "DESC", "VALUES", "TABLE", "PRAGMA"}
+// MySQL table maintenance (ANALYZE / OPTIMIZE / CHECK / REPAIR / CHECKSUM TABLE) returns a status
+// row per table, so it is read like a query too
+var readPrefixes = []string{"SELECT", "SHOW", "WITH", "EXPLAIN", "DESCRIBE", "DESC", "VALUES", "TABLE", "PRAGMA",
+	"ANALYZE", "OPTIMIZE", "CHECK", "REPAIR", "CHECKSUM"}
 
 func isRead(q string) bool {
 	u := strings.ToUpper(strings.TrimSpace(q))
